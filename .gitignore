@@ -1,0 +1,15 @@
+# 构建产物
+bin/
+obj/
+publish/
+
+# 运行期状态（exe 同目录自包含，不入库）
+data/
+*.ini
+*.log
+
+# 家底种子（本机副本，不入库）
+/config/
+
+# 本地未提交的公开快照导出目录
+.public-snapshot/
