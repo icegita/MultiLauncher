@@ -6,6 +6,10 @@
 
 ## 0. 一分钟认识它
 
+![MultiLauncher 主界面](assets/主界面.jpg)
+
+*0.1.8.2 版主界面：左栏「运行信息」+ 三个模块页签 + 参数卡 + 日志。*
+
 MultiLauncher 是一个**本地大模型启动器**。它把原本要在命令行里做的那些事——选模型、调参数、起服务、看日志、查更新——变成一个有界面的窗口。
 
 它同时管**三个引擎模块**，可以只开一个，也可以都开：
@@ -293,3 +297,11 @@ Strata 侧还有它**自己的数据目录**（模型、编译产物等），那
 | **显存互斥** | 一张卡上任一时刻只允许一件把模型读进显存 |
 | **回退** | 用之前自动存下的备份换回旧版本 |
 | **快照** | 一次升级前的完整存档（源码 + 引擎） |
+
+---
+
+## 12. 许可与第三方
+
+- 本项目以 **MIT** 协议开源，全文见仓库根目录的 `LICENSE`。
+- 本程序**不分发**任何第三方引擎的代码或二进制：**Strata**（[Niko1221/Strata](https://github.com/Niko1221/Strata)）、**llama.cpp**（[ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp)）、**Ninfer**（[1314521gjy/ninfer-fusion-kvmem](https://github.com/1314521gjy/ninfer-fusion-kvmem)、[alanthinker/ninfer-4090-yarn](https://github.com/alanthinker/ninfer-4090-yarn)）均属**各自作者**；本程序只在运行时按需下载它们发布的产物，或调用你本机已装好的版本。文中出现的仓库名与地址只作指向用途，不表示任何隶属或背书关系。
+- 界面与文档里出现的产品名与商标归各自所有者。
