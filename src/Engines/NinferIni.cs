@@ -25,6 +25,17 @@ internal static partial class NinferIni
     /// 摊平之后段里其余的键**就是**旗标：`max-context = 262144` ↔ `--max-context 262144`。</summary>
     internal static readonly string[] IdentityKeys = { "backend", "file" };
 
+    /// <summary>壳自己的键（DEC-187）：段里写着它们，但它们既不是引擎旗标、也不进命令行，保存时同样一个字不动。
+    /// `gpu-need-gib` = 这一件的显存估算覆盖值（GiB，含权重）—— 引擎那张档表是按老两件实测的，
+    /// 新件（`Qwen3.8-27B-Coder390-…` 两档）实测比表便宜约 3 GiB，按表算会把能跑的件拦在启动前。
+    /// 写它 = 那一件的读数有出处（调优记录/`capacity |` 行），没写 = 照旧按档表算。</summary>
+    internal static readonly string[] ShellOnlyKeys = { "gpu-need-gib" };
+
+    /// <summary>段里某个键的原值（身份键与壳自己的键走这里；argv 层的旗标用 <see cref="FlagValue"/>）。
+    /// 段是手工构造的（自检用例）时 <see cref="Section.Keys"/> 可能是空的 → 返回 null = 没写这个键。</summary>
+    public static string? KeyValue(Section sec, string key) =>
+        sec.Keys.Where(k => Eq(k.Key, key)).Select(k => k.Value).FirstOrDefault();
+
     /// <summary>旧形状那一条命令行用的键名（DEC-114 首启迁移把它摊成键；迁移没做成的段照旧按它读写）。</summary>
     internal const string LegacyArgsKey = "args";
 
@@ -64,8 +75,9 @@ internal static partial class NinferIni
             var name = t[2..];
             if (name.Length == 0 || !System.Text.RegularExpressions.Regex.IsMatch(name, "^[a-z0-9][a-z0-9-]*$"))
             { error = $"旗标名「{t}」不成其为键（只收小写字母、数字与连字符）"; return false; }
-            if (IdentityKeys.Contains(name, StringComparer.OrdinalIgnoreCase) || Eq(name, LegacyArgsKey))
-            { error = $"旗标「{t}」与段里的身份键撞名（backend / file / args 不写进命令行）"; return false; }
+            if (IdentityKeys.Contains(name, StringComparer.OrdinalIgnoreCase)
+                || ShellOnlyKeys.Contains(name, StringComparer.OrdinalIgnoreCase) || Eq(name, LegacyArgsKey))
+            { error = $"旗标「{t}」与段里的身份键 / 壳自己的键撞名（backend / file / args / gpu-need-gib 不写进命令行）"; return false; }
             if (!seen.Add(name)) { error = $"旗标「{t}」在这一段里出现了两次"; return false; }
             if (BoolFlags.Contains(name, StringComparer.OrdinalIgnoreCase))
             { keys.Add(new KeyValuePair<string, string>(name, "true")); continue; }   // 布尔只认在不在 → 固定写 true
@@ -86,6 +98,7 @@ internal static partial class NinferIni
         {
             var name = kv.Key.Trim();
             if (name.Length == 0 || IdentityKeys.Contains(name, StringComparer.OrdinalIgnoreCase) ||
+                ShellOnlyKeys.Contains(name, StringComparer.OrdinalIgnoreCase) ||
                 Eq(name, LegacyArgsKey)) continue;
             var v = (kv.Value ?? "").Trim();
             // DEC-136（C-4）：布尔也**看值**。写侧照 DEC-119 只发旗标 / 删键，但这份家底是他手编的 ——

@@ -177,7 +177,8 @@ public partial class MainForm
     ///（DEC-067「判不了就当没这条校验」）。下拉那格的占用估算与起前那道账共用它。
     /// 2026-10-12 两处口径改动：① 池与精度按**这一段自己**的 `kv-capacity` / `kv-dtype` 取 —— 下拉同时列着
     /// 两侧的件，而界面上那格只有一个值（跟着激活后端走），按界面值算必然错一边；② WSL 那侧的权重改用
-    /// 那趟 find 带回来的真实字节数（以前恒 0 → 落到 14.0 那个占位，实测少算约 3 GiB）。</summary>
+    /// 那趟 find 带回来的真实字节数（以前恒 0 → 落到 14.0 那个占位，实测少算约 3 GiB）。
+    /// DEC-187：段里写了 `gpu-need-gib` 就以它为准（有出处的实测读数优先于档表）。</summary>
     internal double? NinferNeedGiBFor(string tag)
     {
         var sec = ReadNinferSections().FirstOrDefault(x => string.Equals(x.Name, tag, StringComparison.OrdinalIgnoreCase));
@@ -196,6 +197,13 @@ public partial class MainForm
         }
         catch { }
         if (bytes <= 0) return null;      // 件不在 / WSL 那侧还没扫到 = 这一格空着（与升级前同形），这条也不判
+        // DEC-187：段里写了 `gpu-need-gib` 就以它为准。理由 = 下面那张档表（池 × 132 KiB/token）是按老两件量的，
+        // 而 Coder390 那两件实测池只吃约 27 KiB/token（Q4 chunk 1024 / 池 55,296：权 18.3 + 运行期 4.0 GiB），
+        // 照表算成 25.5 GiB > 24 GB 卡 = 把本来能跑的件拦在启动前。有出处的读数优先于表。
+        if (NinferIni.KeyValue(sec, "gpu-need-gib") is { Length: > 0 } hint
+            && double.TryParse(hint.Trim(), System.Globalization.NumberStyles.Float,
+                               System.Globalization.CultureInfo.InvariantCulture, out var hintGiB) && hintGiB > 0)
+            return Math.Round(hintGiB, 1);
         var toks = NinferIni.Split(sec.Args);
         long pool = long.TryParse(NinferIni.FlagValue(toks, "kv-capacity"), out var p) ? p : 55296;
         var dtype = NinferIni.FlagValue(toks, "kv-dtype") is { Length: > 0 } d ? d : backend == NinferIni.BackendWsl ? "rk4v4-e8" : "k8v4";

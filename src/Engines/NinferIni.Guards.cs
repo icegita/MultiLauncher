@@ -163,7 +163,11 @@ internal static partial class NinferIni
     internal static readonly string[] AllowedKvDtypes =
         { "bf16", "int8", "fp8", "nvfp4", "k8v4", "rk8v4", "rk4v4", "rk4v4-e8", "rk2v4-e8" };
     internal static readonly string[] WslSpecs = { "mtp", "dflash" };
-    internal static readonly string[] WinSpecs = { "dflash2" };
+    /// <summary>WIN 那一代的投机方式白名单。原本只有 `dflash2`（老两件 gsq / swift 带的都是 dflash2 草稿头）；
+    /// DEC-187 起补 `mtp`：`Qwen3.8-27B-Coder390-…-Q4MTP / Q3MTP` 两件带的是 **MTP 头**（仓库口径：MTP 与 DFlash2 互斥），
+    /// 本机 2026-10-17 就是用 `--spec mtp --draft-tokens 12` 跑通的（见 D:\infer-engine\调优记录-Coder390-LynnStyle.md）。
+    /// 白名单只挡"填错名字这一档"，件里真没有那个头仍由引擎自己 FATAL missing component 秒退。</summary>
+    internal static readonly string[] WinSpecs = { "dflash2", "mtp" };
 
     /// <summary>「swift 件 × 行粒度 KV = 静默答错」这条护栏（上游禁忌文档点名的两条硬判据之一）。
     /// 行粒度 = rk* 那一族与 fp8/int8 那几档量化；k8v4/bf16 不算。</summary>

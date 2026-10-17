@@ -345,9 +345,10 @@ public partial class MainForm
             fileEdits = newKeys.Select(k => new LlamaIni.IniEdit(k.Key, k.Value)).ToList();
             foreach (var old in sec.Keys)
             {
-                bool identity = NinferIni.IdentityKeys.Contains(old.Key, StringComparer.OrdinalIgnoreCase);
+                bool identity = NinferIni.IdentityKeys.Contains(old.Key, StringComparer.OrdinalIgnoreCase)
+                                || NinferIni.ShellOnlyKeys.Contains(old.Key, StringComparer.OrdinalIgnoreCase);   // DEC-187
                 bool legacy = string.Equals(old.Key, NinferIni.LegacyArgsKey, StringComparison.OrdinalIgnoreCase);
-                if (identity || legacy) continue;                       // 身份键与 args 壳不写（args 归上面那个分支）
+                if (identity || legacy) continue;                       // 身份键 / 壳自己的键与 args 壳不写（args 归上面那个分支）
                 if (!newKeys.Any(n => string.Equals(n.Key, old.Key, StringComparison.OrdinalIgnoreCase)))
                     fileEdits.Add(new LlamaIni.IniEdit(old.Key, ""));   // 空值 = 从这一段删掉这个键
             }

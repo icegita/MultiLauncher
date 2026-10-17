@@ -46,6 +46,15 @@ internal static partial class SelfTest
                     && System.Text.RegularExpressions.Regex.Matches(built, "--port").Count == 1, built);
                 Check("Ninfer 命令行：WIN 不给格的那几枚（并发数 / 状态槽数 / 排队两枚）照旧透传 —— 摘了就等于把「环硬拒 mc>1」那条护栏自己拆掉",
                     built.Contains("--max-concurrency 1") && !built.Contains("--prefill-chunk"), built);
+                // DEC-187：`gpu-need-gib` 是壳自己的键（那一件的显存估算覆盖值），不是引擎旗标 —— 进命令行就是 unknown argument
+                var needArgv = NinferIni.KeysToArgv(new[]
+                {
+                    new KeyValuePair<string, string>("backend", "win"),
+                    new KeyValuePair<string, string>("gpu-need-gib", "22.3"),
+                    new KeyValuePair<string, string>("max-context", "262144"),
+                });
+                Check("DEC-187 壳自己的键 gpu-need-gib 不进命令行（与 backend / file / args 同一类：文件里有、argv 里没有）",
+                    !needArgv.Contains("gpu-need-gib") && needArgv == "--max-context 262144", needArgv);
 
                 // ============ DEC-136（审查清单 M3 那一批）：形状漏洞各钉一面 ============
                 // C-2：段里"有旗标没值"以前让「保存」在 UI 线程上抛 IndexOutOfRangeException
@@ -109,9 +118,11 @@ internal static partial class SelfTest
                 Check("Ninfer 护栏：行粒度 KV 认得 rk* 那一族与 int8/fp8，k8v4/bf16 不算（swift 件×行粒度 = 静默答错）",
                     NinferIni.IsRowGranularKv("rk4v4-e8") && NinferIni.IsRowGranularKv("int8")
                     && !NinferIni.IsRowGranularKv("k8v4") && !NinferIni.IsRowGranularKv("bf16"));
-                Check("Ninfer 护栏：spec 表外的值按后端拒（WSL 选 dflash2 = FATAL missing component）",
+                Check("Ninfer 护栏：spec 表外的值按后端拒（WSL 选 dflash2 / WIN 选 dflash = 件里没那个头 = FATAL missing component）",
                     NinferIni.ValueProblem("spec", "dflash2", S) is not null && NinferIni.ValueProblem("spec", "mtp", S) is null
-                    && NinferIni.ValueProblem("spec", "mtp", Wn) is not null);
+                    // DEC-187：WIN 那代补进 mtp（Coder390 那两件带的是 MTP 头，2026-10-17 本机跑通），dflash2 照旧在
+                    && NinferIni.ValueProblem("spec", "mtp", Wn) is null && NinferIni.ValueProblem("spec", "dflash2", Wn) is null
+                    && NinferIni.ValueProblem("spec", "dflash", Wn) is not null);
                 var math = NinferIni.HostPages("262144", "55296", "16384", "k8v4");
                 Check("Ninfer 起前算数：256K 上下文 + 55,296 池 + 16 GiB 主机缓存 = 够（包文档那两个换算）",
                     math.Checked && math.HaveHostKib >= math.NeedHostKib, math.Text);
