@@ -34,6 +34,9 @@ jobs:
           $ver = $proj.Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
           Write-Host "tag=$tag csproj=$ver"
           if ($tag -ne $ver) { throw "tag $tag 与 csproj <Version>$ver 不一致，先改一边再打 tag" }
+          # 交付文件名（DEC-194）：带版本与平台。默认只有 MultiLauncher.exe —— 用户把几个版本
+          # 下到同一个目录里就分不清谁是谁，也对不上 Release 上的版本号。
+          "ASSET_NAME=MultiLauncher-$tag-windows-x64" >> $env:GITHUB_ENV
 
       - name: 构建单文件产物
         shell: pwsh
@@ -41,11 +44,15 @@ jobs:
           dotnet publish -c Release -r win-x64 --self-contained false `
             -p:PublishSingleFile=true -o out --nologo
           if ($LASTEXITCODE -ne 0) { throw "publish 失败（$LASTEXITCODE）" }
+          # publish 只按 AssemblyName 出 MultiLauncher.exe，改名在这里做（改 csproj 会影响程序自身的名字）
+          if (-not (Test-Path 'out/MultiLauncher.exe')) { throw 'publish 没出 MultiLauncher.exe' }
+          Move-Item 'out/MultiLauncher.exe' "out/$env:ASSET_NAME.exe"
+          Write-Host "产物已改名：$env:ASSET_NAME.exe"
 
       - name: 校验产物
         shell: pwsh
         run: |
-          $exe = 'out/MultiLauncher.exe'
+          $exe = "out/$env:ASSET_NAME.exe"
           if (-not (Test-Path $exe)) { throw "没有产物：$exe" }
           $size = [math]::Round((Get-Item $exe).Length / 1MB, 2)
           Write-Host "产物大小 ${size} MB"
@@ -58,21 +65,79 @@ jobs:
       - name: 出校验和
         shell: pwsh
         run: |
-          $h = (Get-FileHash 'out/MultiLauncher.exe' -Algorithm SHA256).Hash.ToLower()
-          "$h  MultiLauncher.exe" | Set-Content 'out/MultiLauncher.exe.sha256'
+          $h = (Get-FileHash "out/$env:ASSET_NAME.exe" -Algorithm SHA256).Hash.ToLower()
+          "$h  $env:ASSET_NAME.exe" | Set-Content "out/$env:ASSET_NAME.exe.sha256"
           Write-Host "sha256 $h"
+
+      - name: 生成 Release 说明
+        shell: pwsh
+        run: |
+          # git 的输出是 UTF-8，PowerShell 默认按控制台代码页（简中机器 = GBK）解码，
+          # 中文正文会整段变成「鏈鏇存柊…」。DEC-192 在开源脚本里踩过同一个坑，这里必须一起钉死。
+          [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+          $OutputEncoding = [Console]::OutputEncoding
+
+          # 正文第一段 = **本次公开提交的消息正文**（= 人审通过的那段），DEC-194。
+          # 早先这里只有一段写死的"运行要求"，读者点进 Release 看不到"这次改了什么"。
+          # 提交消息里已无 Local-Head trailer（DEC-194 起锚点住 .git），这里仍过滤一次，
+          # 兼容旧 tag 重跑：万一哪天对历史 tag 重建 Release，也不会把那行 sha 露出来。
+          $raw = @((git log -1 --format=%B) -split "`r?`n" | Where-Object { $_ -notmatch '^Local-Head:\s*\S+\s*$' })
+          # 首尾空行用 List 收拾。别用 `$x = if (...) { @() }` 那种写法：空数组经 if 表达式赋值
+          # 会被展开成 $null，随后对 $null 调 .Trim() 当场抛（第一版就这么炸的）。
+          $lines = [System.Collections.Generic.List[string]]::new()
+          foreach ($l in $raw) { $lines.Add([string]$l) }
+          while ($lines.Count -gt 0 -and [string]::IsNullOrWhiteSpace($lines[0])) { $lines.RemoveAt(0) }
+          while ($lines.Count -gt 0 -and [string]::IsNullOrWhiteSpace($lines[$lines.Count - 1])) { $lines.RemoveAt($lines.Count - 1) }
+
+          # 首行是主题（已作 Release 标题的一部分），正文取第二行起
+          $topic = ''
+          $rest = [System.Collections.Generic.List[string]]::new()
+          if ($lines.Count -gt 0) {
+            $topic = $lines[0].Trim()
+            for ($i = 1; $i -lt $lines.Count; $i++) { $rest.Add($lines[$i]) }
+          }
+          # 脚本自己那句模板句（"本次更新包含以下改动："）与上面的小标题重复，去掉读着才不结巴。
+          # 顺序要紧：先剥空行再判模板 —— 反过来的话判的是那个空行，模板句会漏过去。
+          while ($rest.Count -gt 0 -and [string]::IsNullOrWhiteSpace($rest[0])) { $rest.RemoveAt(0) }
+          if ($rest.Count -gt 0 -and $rest[0].Trim() -eq '本次更新包含以下改动：') { $rest.RemoveAt(0) }
+          while ($rest.Count -gt 0 -and [string]::IsNullOrWhiteSpace($rest[0])) { $rest.RemoveAt(0) }
+
+          # 正文自身的域标题现在就是 `## xxx`（DEC-196）。这种情况下不再套一层「## 本次更新」——
+          # 两个二级标题紧贴着摆，视觉上等于"两个大标题中间没内容"，反而乱。
+          # 正文不是以标题开头（人改成了段落、或只有主题）时才补这层小标题。
+          $startsWithHeading = ($rest.Count -gt 0 -and $rest[0] -match '^#{1,6}\s')
+          $md = [System.Collections.Generic.List[string]]::new()
+          if (-not $startsWithHeading) {
+            $md.Add('## 本次更新')
+            $md.Add('')
+          }
+          if ($rest.Count -gt 0) {
+            foreach ($l in $rest) { $md.Add($l) }
+          } elseif ($topic) {
+            $md.Add($topic)
+          } else {
+            $md.Add('（本次提交无说明）')
+          }
+          $md.Add('')
+          $md.Add('## 运行要求')
+          $md.Add('')
+          $md.Add('- **.NET 10 桌面运行时（Windows x64）** —— 本产物为框架依赖的单文件，不内含运行时，未安装会无法启动。')
+          $md.Add('  下载：https://dotnet.microsoft.com/download/dotnet/10.0')
+          $md.Add('')
+          $md.Add('## 校验')
+          $md.Add('')
+          $md.Add('下载后与 `' + $env:ASSET_NAME + '.exe.sha256` 比对，或 `Get-FileHash ' + $env:ASSET_NAME + '.exe -Algorithm SHA256`。')
+
+          $bodyPath = Join-Path $env:GITHUB_WORKSPACE 'release-body.md'
+          [System.IO.File]::WriteAllText($bodyPath, (([string]::Join("`r`n", $md)) + "`r`n"), (New-Object System.Text.UTF8Encoding($false)))
+          Write-Host "已生成 Release 说明：$bodyPath"
 
       - name: 建 Release 并挂产物
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            out/MultiLauncher.exe
-            out/MultiLauncher.exe.sha256
-          generate_release_notes: true
-          body: |
-            本版运行要求：**.NET 10 桌面运行时（Windows x64）**。
-            本产物为框架依赖的单文件，不内含运行时，未安装会无法启动。
-            下载：https://dotnet.microsoft.com/download/dotnet/10.0
-
-            校验：与 `MultiLauncher.exe.sha256` 比对，或
-            `Get-FileHash MultiLauncher.exe -Algorithm SHA256`
+            out/${{ env.ASSET_NAME }}.exe
+            out/${{ env.ASSET_NAME }}.exe.sha256
+          # 说明来自上一步生成的文件（含人审正文）；不再用 generate_release_notes，
+          # 它会追加一份自动 changelog，与"本次更新"重复。
+          body_path: release-body.md
