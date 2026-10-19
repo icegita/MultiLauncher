@@ -1,0 +1,78 @@
+name: Release
+
+# 打 tag 才构建（DEC-191）。tag 名形如 v0.1.8.2，与 csproj 的 <Version> 同源。
+# 为什么走 Actions 而不是把产物提交进仓库：exe 是 1.47 MB 的二进制，每改一行代码就多一份
+# 无法有效压缩的历史体积；挂到 Release 附件既不占仓库体积，又顺便证明了"这份源码确实编得出来"。
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write   # 建 Release 要写权限；其余一律不申请
+
+jobs:
+  build:
+    # 目标框架是 net10.0-windows + WinForms，只能在 Windows 上构建
+    runs-on: windows-latest
+    steps:
+      - name: 取源码
+        uses: actions/checkout@v4
+
+      - name: 装 .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: 校对 tag 与 csproj 版本号一致
+        shell: pwsh
+        run: |
+          # tag 写的是 v0.1.8.2，csproj 里必须是同一个号 —— 对不上就停，
+          # 免得 Release 页面挂着一个和产物实际版本不符的标题。
+          $tag = $env:GITHUB_REF_NAME -replace '^v', ''
+          [xml]$proj = Get-Content MultiLauncher.csproj
+          $ver = $proj.Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
+          Write-Host "tag=$tag csproj=$ver"
+          if ($tag -ne $ver) { throw "tag $tag 与 csproj <Version>$ver 不一致，先改一边再打 tag" }
+
+      - name: 构建单文件产物
+        shell: pwsh
+        run: |
+          dotnet publish -c Release -r win-x64 --self-contained false `
+            -p:PublishSingleFile=true -o out --nologo
+          if ($LASTEXITCODE -ne 0) { throw "publish 失败（$LASTEXITCODE）" }
+
+      - name: 校验产物
+        shell: pwsh
+        run: |
+          $exe = 'out/MultiLauncher.exe'
+          if (-not (Test-Path $exe)) { throw "没有产物：$exe" }
+          $size = [math]::Round((Get-Item $exe).Length / 1MB, 2)
+          Write-Host "产物大小 ${size} MB"
+
+          # 这里**不做**敏感串扫描（DEC-193）。想扫就得把那份名单写在这个文件里，
+          # 而本文件是公开仓的一部分 —— 名单本身（人名、旧工程代号、本机开发目录）
+          # 一公开，比它想拦的泄露还严重。那份名单只在本地脱敏表里，所以扫描归
+          # 「开源」那两道产物硬闸，本 workflow 只负责证明"这份公开源码编得出产物"。
+
+      - name: 出校验和
+        shell: pwsh
+        run: |
+          $h = (Get-FileHash 'out/MultiLauncher.exe' -Algorithm SHA256).Hash.ToLower()
+          "$h  MultiLauncher.exe" | Set-Content 'out/MultiLauncher.exe.sha256'
+          Write-Host "sha256 $h"
+
+      - name: 建 Release 并挂产物
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            out/MultiLauncher.exe
+            out/MultiLauncher.exe.sha256
+          generate_release_notes: true
+          body: |
+            本版运行要求：**.NET 10 桌面运行时（Windows x64）**。
+            本产物为框架依赖的单文件，不内含运行时，未安装会无法启动。
+            下载：https://dotnet.microsoft.com/download/dotnet/10.0
+
+            校验：与 `MultiLauncher.exe.sha256` 比对，或
+            `Get-FileHash MultiLauncher.exe -Algorithm SHA256`

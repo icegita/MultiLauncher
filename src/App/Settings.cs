@@ -94,7 +94,7 @@ public class Settings
     public string NinferWslBin { get; set; } = "/home/user/ninfer-4090-yarn/build/apps/ninfer-serve"; // WSL 内引擎可执行
     public string NinferUpdateUrl { get; set; } = "https://github.com/1314521gjy/ninfer-fusion-kvmem/releases";
                                                               // WIN 那条更新链的发布页（网页或 api 地址都吃，同 llama 那条）
-    public string NinferWslUpdateUrl { get; set; } = "";   // DEC-110④：默认留空 = 沿用那仓库自己的 origin（与 NinferLauncher 的 `git fetch origin` 逐字一致，最稳）；填了才显式从那一头 fetch
+    public string NinferWslUpdateUrl { get; set; } = "";   // DEC-110④：默认留空 = 沿用那仓库自己的 origin（与 旧壳 的 `git fetch origin` 逐字一致，最稳）；填了才显式从那一头 fetch
                                                               // DEC-110④：WSL 那条链的上游仓库（它不吃 releases——是进 VM 对本地 git 仓库取上游）。
                                                               // 填了就**显式从这一头** fetch 对应分支；留空 = 沿用那仓库自己的 origin（旧行为）。分支照旧自动认。
     public bool AutoStartNinfer { get; set; } = false;       // 打开启动器后自动启动 Ninfer（按当前后端）
