@@ -394,7 +394,20 @@ public partial class MainForm
             Toast.Show(this, "那一份 exe 备份不在了，恢复取消", Toast.Kind.Warn);
             return;
         }
-        if (!BackupBeforeRestore(exe, NinferExeBackupDir(), NinferExeBackupPrefix, out var newName, out var berr))
+        // DEC-199（2026-10-20 他实跑点名）：恢复前先做三件事 —— ① 要恢复的就是现在这一支 → 什么都不碰；
+        // ② 把这一格按内容去重一次（同一份内容只留最早那个名字）；③ 再按内容决定"要不要真存一份新备份"。
+        var pickSha = Sha256FileOrEmpty(bak);
+        var curSha = Sha256FileOrEmpty(exe);
+        if (pickSha.Length > 0 && string.Equals(pickSha, curSha, StringComparison.OrdinalIgnoreCase))
+        {
+            // 现在跑的就是它：不备份、不覆盖、不新建任何文件（他原话：「备份前应检查 hash，如果有相同的版本，不要碰原文件」）
+            LogN("恢复没做：现在这一支与要恢复的备份 " + pick + " 逐字节相同，什么都不用换（也没多存备份）。");
+            Toast.Show(this, "现在跑的就是这一支，不用恢复", Toast.Kind.Info);
+            return;
+        }
+        var deduped = DedupeBackupsByContent(NinferExeBackupDir(), NinferExeBackupPrefix);
+        if (deduped > 0) LogN($"恢复前先收拾了这一格：按内容去重删掉 {deduped} 份重复备份（同一份内容只留最早那个名字）");
+        if (!BackupBeforeRestore(exe, NinferExeBackupDir(), NinferExeBackupPrefix, out var newName, out var berr, out var reused))
         {
             LogN("备份没做成，恢复取消：" + berr);
             Toast.Show(this, "备份没做成，恢复取消", Toast.Kind.Error);
@@ -407,14 +420,21 @@ public partial class MainForm
         }
         catch (Exception ex)
         {
-            LogN("恢复失败：" + ex.Message + "（现在这份已先备份成 " + newName + "、没被改坏；"
-                 + pick + " 也还在，没收口 —— 多一份不影响，下次恢复照旧列得出来）");
+            LogN("恢复失败：" + ex.Message + "（现在这份" + (reused ? "在备份里本来就有一份 " + newName : "已先备份成 " + newName)
+                 + "、没被改坏；" + pick + " 也还在，没收口 —— 多一份不影响，下次恢复照旧列得出来）");
             Toast.Show(this, "恢复失败：" + ex.Message, Toast.Kind.Error);
             return;
         }
         // 版本那一对要跟着重算：exe 换回去了，缓存里那串 sha 已经不是它（DEC-097④ 的判据）
         InvalidateNinferLocalVersion();
-        LogN($"已从备份 {pick} 恢复引擎 exe（现在这份已先存成 {newName}；「起服务」时才落到进程）");
+        // 回退这一刀不写缓存是对的（DEC-097④：没有出处就不把版本号钉进 ini）—— 但界面不该因此停在
+        // 「未知构建」：那一句是给「从没查过 / 读不动哈希」准备的。回退过的那一支有个**看得见的出处**：
+        // 备份清单里那条文件名 = 换掉它的那一次时间戳，而这次恢复的正是它。文案由
+        // NinferRolledBackText() 给（MainForm.UpdateNinferWsl.cs），判据在 SelfTest.UiUpdateWindow。
+        _ninferRolledBackFrom = pick;
+        LogN($"已从备份 {pick} 恢复引擎 exe（现在这份" +
+             (reused ? "在备份里本来就有一份 " + newName + "，没有多存" : "已先存成 " + newName) +
+             "；「起服务」时才落到进程）");
         Toast.Show(this, "已恢复引擎 exe：" + pick, Toast.Kind.Ok);
         RefreshModels(NinferKey);       // 只重扫 Ninfer（DEC-097⑤）
     }

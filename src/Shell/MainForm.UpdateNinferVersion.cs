@@ -121,6 +121,9 @@ public partial class MainForm
         _config.Current.NinferWinVersionSha = sha;
     }
     internal void RememberNinferWinVersionForTest(string tag, string sha) => RememberNinferWinVersion(tag, sha);
+    /// <summary>回退来源这一位的读写口（自检要验「回退过 ≠ 未知构建」那一条，又不想真去覆盖 1.5 GB 的 exe）。</summary>
+    internal void SetNinferRolledBackFromForTest(string backupFileName) => _ninferRolledBackFrom = backupFileName ?? "";
+    internal string NinferRolledBackFromForTest => _ninferRolledBackFrom;
     internal string NinferWslVersionTextForTest => NinferWslVersionForSettings();
 
     /// <summary>WIN 侧那只引擎可执行的实际路径（按目录里的 ninfer-serve-*.exe 认，与起服务同一判据）。</summary>

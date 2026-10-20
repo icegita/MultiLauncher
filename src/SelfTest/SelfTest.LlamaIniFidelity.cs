@@ -158,6 +158,71 @@ internal static partial class SelfTest
                         && MainForm.StrataBackupKeep == 3,
                         $"llama {MainForm.RouterIniBackupKeep} / ninfer {MainForm.NinferBackupKeep} / strata {MainForm.StrataBackupKeep}");
 
+                    // ============ DEC-200（2026-10-20 他理清后拍板）：备份名里的时间戳 = 原件时间 ============
+                    // 他的原话：「原来是这样,按这个逻辑改」—— 名字要当版本身份用，不能是「哪天备份的」。
+                    {
+                        var nd = Path.Combine(bkDir, "dec200-stamp");
+                        Directory.CreateDirectory(nd);
+                        var srcF = Path.Combine(nd, "llama_models.ini");
+                        File.WriteAllText(srcF, "版本X\n", new UTF8Encoding(false));
+                        var fixedTime = new DateTime(2026, 10, 8, 20, 32, 45);      // 一个与"现在"明确不同的时刻
+                        File.SetLastWriteTime(srcF, fixedTime);
+                        Check("DEC-200 StampForBackup 取的是原件最后写入时间，不是 DateTime.Now（用例前提：这个时刻不在今天）",
+                            MainForm.StampForBackup(srcF) == "20261008-203245", MainForm.StampForBackup(srcF));
+                        bool okProp = MainForm.BackupFileTo(srcF, nd, MainForm.RouterIniBackupPrefix, out var propName, out var propErr);
+                        Check("DEC-200 备份文件名里那段时间戳 = 原件的 LastWriteTime（名字即版本身份，不再随备份时刻漂）",
+                            okProp && propName == MainForm.RouterIniBackupPrefix + "20261008-203245" + ".ini",
+                            propErr + " / " + propName);
+                        Check("DEC-200 备份出来的那份 mtime 也还是原件那个时刻（把事实钉住，别以后被人改档）",
+                            propName is { Length: > 0 } && File.GetLastWriteTime(Path.Combine(nd, propName)) == fixedTime,
+                            propName is { Length: > 0 } ? File.GetLastWriteTime(Path.Combine(nd, propName)).ToString("yyyyMMdd-HHmmss") : "");
+                        var missing = Path.Combine(nd, "根本不存在的文件.ini");
+                        var fallback = MainForm.StampForBackup(missing);
+                        Check("DEC-200 原件读不出来 → 退回当前时刻（名字总得有一个，但不许抛异常也不许是空串）",
+                            fallback.Length == 15 && fallback[8] == '-', fallback);
+                    }
+                    // ============ DEC-199（2026-10-20 他实跑点名）：恢复前的三件事 ============
+                    // 「如 20261001, 20261010, 20261020, 恢复到 1001 后, 再恢复到 1020, 不应该覆盖原 1001,
+                    //   备份前应检查 hash, 如果有相同的版本, 不要碰原文件」。
+                    // 三面：① 同内容已有备份 → 复用、不新建；② 按内容去重只留最早那个名字；③ 内容不同时照旧新建。
+                    {
+                        var hd = Path.Combine(bkDir, "dec199-hash");
+                        Directory.CreateDirectory(hd);
+                        var live = Path.Combine(hd, "llama_models.ini");
+                        File.WriteAllText(live, "版本A\n", new UTF8Encoding(false));
+                        File.WriteAllText(Path.Combine(hd, "llama_models-20261001-000000.ini"), "版本B\n", new UTF8Encoding(false));
+                        Check("DEC-199 用例前提：这一格只有一份、且与工作文件内容不同（否则复用那条判不出东西）",
+                            MainForm.ListBackupsIn(hd, MainForm.RouterIniBackupPrefix).Count == 1
+                            && MainForm.Sha256FileOrEmpty(live) != MainForm.Sha256FileOrEmpty(Path.Combine(hd, "llama_models-20261001-000000.ini")), "");
+                        // ① 内容不同的那一次：照旧新建一份
+                        bool hOk = MainForm.BackupBeforeRestore(live, hd, MainForm.RouterIniBackupPrefix,
+                                                               out var hName, out var hErr, out var hReused);
+                        Check("DEC-199 目录里没有同内容备份 → 照旧新建一份（reused=false，这份文件真写出来了）",
+                            hOk && !hReused && hName is { Length: > 0 } && File.Exists(Path.Combine(hd, hName)),
+                            hErr + " / " + hName + " / reused=" + hReused);
+                        // ② 同一份内容再来一次：复用，一个字节都不多写
+                        int before2 = MainForm.ListBackupsIn(hd, MainForm.RouterIniBackupPrefix).Count;
+                        bool hOk2 = MainForm.BackupBeforeRestore(live, hd, MainForm.RouterIniBackupPrefix,
+                                                                out var hName2, out var hErr2, out var hReused2);
+                        int after2 = MainForm.ListBackupsIn(hd, MainForm.RouterIniBackupPrefix).Count;
+                        Check("DEC-199 同内容再来一次 → 复用已有那份、不新建（份数不变、名字与上次那份是同一份）",
+                            hOk2 && hReused2 && hName2 == hName && after2 == before2,
+                            hErr2 + " / " + hName2 + " / reused=" + hReused2 + " / 份数 " + before2 + "→" + after2);
+                        // ③ 按内容去重：手造重复（同内容不同名），只留最早那个名字
+                        var first = Path.Combine(hd, "llama_models-20261002-000000.ini");
+                        File.WriteAllText(first, "版本A\n", new UTF8Encoding(false));     // 与 live 内容相同 = 与 hName 那份也相同
+                        File.WriteAllText(Path.Combine(hd, "llama_models-20261003-000000.ini"), "版本A\n", new UTF8Encoding(false));
+                        int nBefore = MainForm.ListBackupsIn(hd, MainForm.RouterIniBackupPrefix).Count;
+                        int removed = MainForm.DedupeBackupsByContent(hd, MainForm.RouterIniBackupPrefix);
+                        var left = MainForm.ListBackupsIn(hd, MainForm.RouterIniBackupPrefix);
+                        var leftSha = left.Select(n => MainForm.Sha256FileOrEmpty(Path.Combine(hd, n))).ToList();
+                        Check("DEC-199 按内容去重：同一份内容只留一份，且留下的名字是清单里最早那个（时间戳最小的那个）",
+                            removed == 2 && left.Count == nBefore - 2 && leftSha.Distinct().Count() == leftSha.Count
+                            && left.Contains("llama_models-20261001-000000.ini"),
+                            "删 " + removed + " 份，剩 " + string.Join("|", left));
+                        Check("DEC-199 去重后每份内容都不一样（判据的反面：不许把不同内容的也删掉）",
+                            leftSha.Distinct().Count() == leftSha.Count, string.Join("|", left));
+                    }
                     // ============ DEC-134（2026-10-10 只读审查那一族的整改） ============
                     // ①三处「从备份恢复」原先都是「备份+轮转 → 复制」= 那一格满 3 份时，被删掉的最旧那一份
                     //   正是用户点名要退回的那一份（BUG-051 的第二个入口）；②整份快照的轮转不认形状，

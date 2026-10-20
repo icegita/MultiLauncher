@@ -323,10 +323,19 @@ public partial class MainForm
         return del;
     }
 
-    /// <summary>copy 一份备份；同一秒里连着存两次就补序号，**绝不覆盖已有备份**。
+    /// <summary>copy 一份备份；同一时刻连着存两次就补序号，**绝不覆盖已有备份**。
     /// DEC-110⑤：**后缀照源文件**（原来写死 `.ini` → 引擎 exe 被存成 `ninfer-serve-<时间戳>.ini`，
     /// 用户实跑抓到的"配置和 exe 混在一起"就是这个字面成因 —— 那是一份 exe 的副本顶着 .ini 的名字）。
-    /// 前缀仍是身份判据（`llama_models-` / `ninfer_models-` = 配置，`ninfer-serve-` = 引擎 exe）。</summary>
+    /// 前缀仍是身份判据（`llama_models-` / `ninfer_models-` = 配置，`ninfer-serve-` = 引擎 exe）。
+    ///
+    /// **DEC-200（2026-10-20 他实跑理清后拍板）：名字里那段时间戳 = 原件的时间（<see cref="File.GetLastWriteTime(FileInfo)"/>），
+    /// 不再是「备份动作发生的时刻」（原来那句 `DateTime.Now`）。**
+    /// 为什么换：用"换下时刻"命名时，同一份内容反复换下会生出内容全同、名字各异的副本（DEC-199 已从"产生端"堵住），
+    /// 但名字本身仍然读不懂 —— 引擎目录里躺着一支 10-08 构建的 exe，被换下那天（10-20）备份，名字写 20261020，
+    /// 而文件的修改时间是 10-08，两个时间并排看就是自相矛盾；更糟的是清单按名字里的时间戳降序排（见 <see cref="ListBackupsIn"/>），
+    /// 于是"最早的那个版本"会排在最前面冒充最新。改成原件时间后：**名字 = 版本身份**（同一版本永远同名、可反复恢复），
+    /// **排序 = 版本新旧**（不再是"哪天备份的"），文件名时间与文件修改时间天然一致。
+    /// 代价（已登记）：原件时间相同的两份会撞名 → 走下面那个 `-2`/`-3` 序号；轮转顺序跟着从"备份先后"变成"版本新旧"。</summary>
     internal static bool BackupFileTo(string src, string dir, string prefix, out string? name, out string error)
     {
         name = null; error = "";
@@ -334,7 +343,9 @@ public partial class MainForm
         try
         {
             Directory.CreateDirectory(dir);
-            var stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
+            // DEC-200：原件时间（= 版本身份），不是 DateTime.Now（= 备份动作那一刻）。
+            // 读不出来（文件系统异常）就退回当前时刻 —— 名字总得有一个，且此时也判不出"原件时间"。
+            var stamp = StampForBackup(src);
             var ext = Path.GetExtension(src);        // 源文件是什么后缀，备份就是什么后缀（.ini / .exe 都照搬）
             var candidate = prefix + stamp + ext;
             for (int n = 2; File.Exists(Path.Combine(dir, candidate)); n++)
@@ -344,6 +355,18 @@ public partial class MainForm
             return true;
         }
         catch (Exception ex) { error = ex.Message; return false; }
+    }
+
+    /// <summary>备份名里那段时间戳（纯判据，自检直接喂）：= 原件的最后写入时间；读不出来就退回当前时刻。
+    /// DEC-200：这一处收口是为了让"名字 = 版本身份"这条口径只有一个家 —— 别在调用点各拼各的。</summary>
+    internal static string StampForBackup(string path)
+    {
+        try
+        {
+            if (File.Exists(path)) return File.GetLastWriteTime(path).ToString("yyyyMMdd-HHmmss");
+        }
+        catch { /* 读不出来就走下面那条兜底 */ }
+        return DateTime.Now.ToString("yyyyMMdd-HHmmss");
     }
 
     internal static List<string> ListRouterIniBackups() => ListBackupsIn(RouterIniBackupDir(), RouterIniBackupPrefixes);
@@ -365,9 +388,72 @@ public partial class MainForm
     /// 理由不是洁癖：恢复的次序是「备份当前 → 复制选中那份 → 收口」，若第二步之前就先轮转，
     /// 那一格满 3 份时被删掉的正是最旧那一份 = 用户刚点名要退回的那一份（复制随即抛 FileNotFoundException，
     /// 而那份原件已经没了 —— BUG-051「自动轮转挤掉用户原件」的第二个入口）。三处恢复（llama ini / ninfer ini /
-    /// ninfer exe）都走这一个函数，自检钉的就是它（`SelfTest` 里按回"备份+轮转"会红）。</summary>
+    /// ninfer exe）都走这一个函数，自检钉的就是它（`SelfTest` 里按回"备份+轮转"会红）。
+    /// **DEC-199（2026-10-20 他实跑点名）**：这里先**按内容比一遍** —— 目录里已经有一份与 <paramref name="src"/>
+    /// 逐字节相同（sha256 相同）的备份时就**复用它、一个字节都不写**，不再像以前那样每次都 `File.Copy` 出新的一份。
+    /// 为什么必须比：那个文件名里的时间戳是"被换下的时刻"，同一份内容反复换下就会生出 N 个名字不同、内容全同的副本，
+    /// 而轮转只留 3 份 —— 副本一多，被挤掉的正是别的版本（他原话：「如 20261001, 20261010, 20261020, 恢复到 1001 后,
+    /// 再恢复到 1020, 不应该覆盖原 1001, 备份前应检查 hash, 如果有相同的版本, 不要碰原文件」）。
+    /// 返回 true 且 <paramref name="reused"/> = true 表示"复用了已有那份、没新建"。</summary>
+    internal static bool BackupBeforeRestore(string src, string dir, string prefix, out string? name, out string error, out bool reused)
+    {
+        name = null; error = ""; reused = false;
+        // ① 先比内容：目录里已有同 sha 的那一份 → 直接拿它的名字回去，不建新文件、不动 Old 文件
+        var sha = Sha256FileOrEmpty(src);
+        if (sha.Length > 0)
+        {
+            foreach (var existing in ListBackupsIn(dir, prefix))
+            {
+                var p = Path.Combine(dir, existing);
+                if (!File.Exists(p)) continue;
+                if (!string.Equals(Sha256FileOrEmpty(p), sha, StringComparison.OrdinalIgnoreCase)) continue;
+                name = existing; reused = true;
+                return true;
+            }
+        }
+        // ② 没有同内容的 → 照原样新建一份（BackupFileTo 自带"同秒重名就加序号"）
+        return BackupFileTo(src, dir, prefix, out name, out error);
+    }
+
+    /// <summary>为兼容老调用点保留的入口（不要新写调用点用这一版：新版多一个 <c>reused</c>，日志要据此说清
+    /// "这一份是复用已有备份、没有多写一个文件"）。</summary>
     internal static bool BackupBeforeRestore(string src, string dir, string prefix, out string? name, out string error)
-        => BackupFileTo(src, dir, prefix, out name, out error);
+        => BackupBeforeRestore(src, dir, prefix, out name, out error, out _);
+
+    /// <summary>按内容去重（DEC-199，一次性入口 —— **不进轮转**）：同一份内容在 <paramref name="dir"/> 里留多份时，
+    /// 只留**文件名最早**的那一份（= 最早被换下的那道痕迹，最接近"原件名"），其余删掉。
+    /// 返回删掉的份数。为什么只在恢复流程开头调用一次、而不是塞进 <see cref="TrimBackupsIn"/>：
+    /// 轮转每次备份后都跑，若在那里做内容去重，"3 份 → 去重后 2 份"会让保留数变得不可预测；
+    /// 放在恢复这一个明确入口，语义是"我准备恢复了，先把这一格收拾干净"，看一眼就知道发生过什么。
+    /// 删不动的（被占用）留着，不影响正确性。</summary>
+    internal static int DedupeBackupsByContent(string dir, params string[] prefixes)
+    {
+        int del = 0;
+        try
+        {
+            var seen = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);   // sha → 留下的那份文件名
+            // ListBackupsIn 是"最新在前"，倒过来走 = 先见到最早的：最早那两份之一被留下
+            foreach (var n in ListBackupsIn(dir, prefixes).AsEnumerable().Reverse())
+            {
+                var p = Path.Combine(dir, n);
+                if (!File.Exists(p)) continue;
+                var sha = Sha256FileOrEmpty(p);
+                if (sha.Length == 0) continue;                 // 读不动 = 判不了，留着（不猜）
+                if (seen.ContainsKey(sha)) { try { File.Delete(p); del++; } catch { /* 删不动就多留一份 */ } }
+                else seen[sha] = n;
+            }
+        }
+        catch { /* best effort：去重失败不影响恢复本身 */ }
+        return del;
+    }
+
+    /// <summary>算文件的 sha256，读不动就交回空串（不抛）：判据用"空 = 判不了"，不拿猜测当结论。</summary>
+    internal static string Sha256FileOrEmpty(string path)
+    {
+        try { return File.Exists(path) ? Net.Sha256File(path) : ""; }
+        catch { return ""; }
+    }
+
 
     /// <summary>启动时把家底安顿好：先做 DEC-084 的**旧名一次性搬家**，再走"缺才拷"（种子 = 旧 ini 里那条已退役的 RouterIni 路径）。
     /// <paramref name="migrated"/> = "renamed" / "archived" / ""（这次真的动了旧名那份才给值，给启动日志那一行用）。</summary>
@@ -557,7 +643,19 @@ public partial class MainForm
             Toast.Show(this, "那一份备份不在了，恢复取消", Toast.Kind.Warn);
             return;
         }
-        if (!BackupBeforeRestore(RouterIniPath(), RouterIniBackupDir(), RouterIniBackupPrefix, out _, out var berr))
+        // DEC-199：与另两处同一套 —— 要恢复的就是现在这份 → 什么都不碰；再按内容去重、按内容决定要不要真存。
+        {
+            var bakSha = Sha256FileOrEmpty(bak);
+            if (bakSha.Length > 0 && string.Equals(bakSha, Sha256FileOrEmpty(RouterIniPath()), StringComparison.OrdinalIgnoreCase))
+            {
+                LogL("恢复没做：现在这份 llama_models.ini 与 " + pick + " 逐字节相同，什么都不用换（也没多存备份）。");
+                Toast.Show(this, "现在这份就是要恢复的那一份，不用恢复", Toast.Kind.Info);
+                return;
+            }
+            var deduped = DedupeBackupsByContent(RouterIniBackupDir(), RouterIniBackupPrefixes);
+            if (deduped > 0) LogL($"恢复前先收拾了这一格：按内容去重删掉 {deduped} 份重复备份（同一份内容只留最早那个名字）");
+        }
+        if (!BackupBeforeRestore(RouterIniPath(), RouterIniBackupDir(), RouterIniBackupPrefix, out _, out var berr, out _))
         {
             LogL("备份没做成，恢复取消：" + berr);
             Toast.Show(this, "备份没做成，恢复取消", Toast.Kind.Error);

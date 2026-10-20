@@ -385,7 +385,48 @@ public partial class MainForm
                 : _ninferWinShaComputing ? "读取中…" : "读不到哈希（exe 被占用？）· 点「更新…」查一次";
         if (s.NinferWinVersion.Length > 0
             && string.Equals(sha, s.NinferWinVersionSha, StringComparison.OrdinalIgnoreCase)) return s.NinferWinVersion;
+        // 这一支是不是"从备份恢复来的"：先看本会话那一拍**真走了恢复**时记下的出处，
+        // 再退到"当前 exe 的 sha 与备份目录里某一份逐字节相同"这条**从文件系统推**的判据。
+        // 为什么要有第二条：回退来源以前是纯会话内的字段，重启外壳就没了 —— 而"已经回退过、之后一直显示
+        // 未知构建"恰恰就是这个形状（他 2026-10-20 实跑第二次点名）。备份目录里躺着的那一份只能是"某次被换掉的
+        // exe"，当前工作 exe 与它逐字节相同 = 当前这一支就是从备份来的，这不依赖任何会话状态。
+        var rolledFrom = _ninferRolledBackFrom.Length > 0 ? _ninferRolledBackFrom : FindNinferExeBackupMatching(sha);
+        if (rolledFrom.Length > 0) return NinferRolledBackText(rolledFrom);
         return "未知构建（" + NinferShaShort(sha) + "）· 点「更新…」查一次";
+    }
+
+    /// <summary>备份目录里有没有一份 exe 与给定 sha 逐字节相同（有就返回它的文件名，没有返回空串）。
+    /// 判据只认**内容相同**，不看文件名里的时间戳；读不动的那一份直接跳过（best effort，判不了就不当命中）。
+    /// 开销：目录里最多留 <see cref="NinferBackupKeep"/> 份（3），每份一次 sha256 —— 而这条只在
+    /// "缓存对不上、要报未知构建"那一档才走，正常路径一次都不读盘。</summary>
+    internal string FindNinferExeBackupMatching(string sha)
+    {
+        // 不挂 VersionProbeDisabledForTest：那一枚挡的是"自动去读 1.5 GB 的 exe / 进 VM"这两件**有副作用**的事，
+        // 而这里只在"缓存对不上、要报未知构建"那一档才走，读的是备份目录里最多 3 份、每份一次 sha256；
+        // 挂上去反而会让"当前支是不是回退来的"这条判据在自检里永远为假（红侧当场抓到了这一点）。
+        if ((sha ?? "").Trim().Length == 0) return "";
+        try
+        {
+            var dir = NinferExeBackupDir();
+            if (!Directory.Exists(dir)) return "";
+            foreach (var name in ListBackupsIn(dir, NinferExeBackupPrefix))
+            {
+                var path = Path.Combine(dir, name);
+                if (!File.Exists(path)) continue;
+                if (string.Equals(SafeNinferSha(path), sha, StringComparison.OrdinalIgnoreCase)) return name;
+            }
+        }
+        catch { /* 判不了就当没命中：宁可报未知构建，也不乱认一支 */ }
+        return "";
+    }
+
+    /// <summary>回退过的引擎那一行说什么（纯函数，自检直接喂样本）。
+    /// 与「未知构建」是**两回事**：未知构建 = 没出处；这一支的出处就是那条备份（文件名里带时间戳），
+    /// 回退那一刻壳自己写下来的。长写法给设置页与更新窗，左栏那格由 <see cref="ShortVersionForSidebar"/> 收成一个词。</summary>
+    internal static string NinferRolledBackText(string backupFileName)
+    {
+        var n = (backupFileName ?? "").Trim();
+        return n.Length == 0 ? "" : "已回退（备份 " + n + "）· 点「更新…」查一次";
     }
 
     /// <summary>sha 短到能上界面（16 位 + 省略号；完整值只进日志与缓存字段）。</summary>
@@ -396,14 +437,15 @@ public partial class MainForm
     /// WIN 版本比较长，"只显示 -kvmem 前面的部分即可"）：
     ///   engine-v0.11.0-kvmem-20261003 → engine-v0.11.0（截到 -kvmem 之前）
     /// 其余长写法（状态类）也各缩到一个词，免得右对齐的格子里只剩尾巴：未知构建 / 读取中… / 未读 /
-    /// 读不到 / 引擎不在 / 未启用 / 未查过。**只管左栏那一行** —— 设置页与更新窗照旧显示全文。</summary>
+    /// 读不到 / 引擎不在 / 未启用 / 未查过 / 已回退（本会话从备份恢复过引擎，见 <see cref="NinferRolledBackText"/>）。
+    /// **只管左栏那一行** —— 设置页与更新窗照旧显示全文。</summary>
     internal static string ShortVersionForSidebar(string raw)
     {
         var v = (raw ?? "").Trim();
         if (v.Length == 0) return "-";
         var i = v.IndexOf("-kvmem", StringComparison.OrdinalIgnoreCase);
         if (i > 0) return v[..i];
-        foreach (var lead in new[] { "未知构建", "读取中", "未读", "读不到", "引擎不在", "未启用", "未查过" })
+        foreach (var lead in new[] { "未知构建", "已回退", "读取中", "未读", "读不到", "引擎不在", "未启用", "未查过" })
             if (v.StartsWith(lead, StringComparison.Ordinal)) return lead == "读取中" ? "读取中…" : lead;
         return v;
     }

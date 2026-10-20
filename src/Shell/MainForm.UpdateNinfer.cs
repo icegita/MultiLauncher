@@ -37,6 +37,10 @@ public partial class MainForm
     string _ninferLocalSha = "";
     string? _ninferWinShaNow;           // 本地 exe 的 sha256（null = 本会话还没算过，见 EnsureNinferWinSha）
     bool _ninferWinShaComputing;        // 那一趟只发起一次（刷视图会反复问「版本」，别每次都读一遍 1.5 GB）
+    // 本会话从备份恢复过引擎时记下**那一份备份的文件名**（= 换掉它的那一次时间戳）。
+    // 它只用来把「版本」那一行的文案从「未知构建（冷冰冰的 sha）」换成「已回退到 <文件名>」——
+    // 回退这一刀**不写版本缓存**（DEC-097④：没有出处就不钉 ini），所以这个值不落盘、只活一个会话。
+    string _ninferRolledBackFrom = "";
     /// <summary>检查那一步算出来的本地值一并交给缓存这条路（UI 线程调）：sha 存进 <see cref="_ninferWinShaNow"/>
     /// 免得再读一遍盘；反查到了 tag 就把这一对钉进 ini（DEC-097④，下次开界面直接读得到，不必再点一次检查）。</summary>
     void AdoptNinferLocal(string tag, string sha)

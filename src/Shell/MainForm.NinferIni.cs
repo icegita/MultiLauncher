@@ -556,7 +556,17 @@ public partial class MainForm
             Toast.Show(this, "那一份备份不在了，恢复取消", Toast.Kind.Warn);
             return;
         }
-        if (!BackupBeforeRestore(NinferIniPath(), NinferBackupDir(), NinferIniBackupPrefix, out _, out var berr))
+        // DEC-199：与引擎 exe 那条同一套 —— 要恢复的就是现在这份 → 什么都不碰；再按内容去重、按内容决定要不要真存。
+        if (string.Equals(Sha256FileOrEmpty(bak), Sha256FileOrEmpty(NinferIniPath()), StringComparison.OrdinalIgnoreCase)
+            && Sha256FileOrEmpty(bak).Length > 0)
+        {
+            LogN("恢复没做：现在这份 ninfer_models.ini 与 " + pick + " 逐字节相同，什么都不用换（也没多存备份）。");
+            Toast.Show(this, "现在这份就是要恢复的那一份，不用恢复", Toast.Kind.Info);
+            return;
+        }
+        var deduped = DedupeBackupsByContent(NinferBackupDir(), NinferIniBackupPrefix);
+        if (deduped > 0) LogN($"恢复前先收拾了这一格：按内容去重删掉 {deduped} 份重复备份（同一份内容只留最早那个名字）");
+        if (!BackupBeforeRestore(NinferIniPath(), NinferBackupDir(), NinferIniBackupPrefix, out _, out var berr, out _))
         {
             LogN("备份没做成，恢复取消：" + berr);
             Toast.Show(this, "备份没做成，恢复取消", Toast.Kind.Error);

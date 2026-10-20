@@ -58,6 +58,63 @@ internal static partial class SelfTest
                     uiForm.SetNinferWinShaForTest(null);
                     Check("DEC-097④ 还没算出 sha 时不猜（自检期间明说「未读」，真界面里是「读取中…」）",
                         uiForm.NinferVersionTextForTest.StartsWith("未读"), uiForm.NinferVersionTextForTest);
+                    // DEC-198（2026-10-20 他实跑：02:15 升到 …-20261020，03:02 手动回退后左栏一直报「未知构建」）：
+                    // 「回退过」与「没出处」是两件事 —— 回退的那一支出处就是那条备份（文件名带时间戳），
+                    // 这一档必须说清，不能再退化成「未知构建」。
+                    uiForm.SetNinferWinShaForTest("ffee1234567890abcdef");
+                    uiForm.SetNinferRolledBackFromForTest("ninfer-serve-20261020-030252.exe");
+                    Check("DEC-198 本会话回退过引擎 → 版本行说「已回退（备份 <文件名>）」，不报「未知构建」",
+                        uiForm.NinferVersionTextForTest.Contains("已回退")
+                        && uiForm.NinferVersionTextForTest.Contains("ninfer-serve-20261020-030252.exe")
+                        && !uiForm.NinferVersionTextForTest.Contains("未知构建"),
+                        uiForm.NinferVersionTextForTest);
+                    Check("DEC-198 左栏那格窄地上缩成一个词「已回退」（全文照旧留给设置页与更新窗）",
+                        MainForm.ShortVersionForSidebar(uiForm.NinferVersionTextForTest) == "已回退",
+                        MainForm.ShortVersionForSidebar(uiForm.NinferVersionTextForTest));
+                    Check("DEC-198 回退来源为空串时一个字都不多说（不造「已回退（）」这种空话）",
+                        MainForm.NinferRolledBackText("") == "" && MainForm.NinferRolledBackText("  ") == "", "ok");
+                    uiForm.SetNinferRolledBackFromForTest("");
+                    Check("DEC-198 清掉回退来源后回到原来那一档（exe 被换过 → 未知构建）",
+                        uiForm.NinferVersionTextForTest.Contains("未知构建"), uiForm.NinferVersionTextForTest);
+                    uiForm.SetNinferWinShaForTest(null);
+                    // DEC-198 第二轮（2026-10-20 他第二次点名：「现在还是显示未知构建?」）：
+                    // 「已回退」以前只认本会话那个字段 → 重启外壳就没了，而"已经回退过、之后一直显示未知构建"
+                    // 正是他看到的形状。判据补一条**从备份目录推**：当前 exe 的 sha 与备份里某一份逐字节相同
+                    // = 这一支是回退来的。三面：命中 / sha 对不上不误认 / 目录为空不误报。
+                    {
+                        var homeBakV = Path.GetDirectoryName(MainForm.NinferIniPath())!;
+                        var verHome = MainForm.Scratch("selftest-ninfer-rollback");
+                        try
+                        {
+                            var bakDir = Path.Combine(verHome, "backups-exe");
+                            Directory.CreateDirectory(bakDir);
+                            var bakPath = Path.Combine(bakDir, "ninfer-serve-20261020-030252.exe");
+                            File.WriteAllBytes(bakPath, new byte[] { 0x4d, 0x5a, 0xAB, 0xCD });
+                            var bakSha = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(bakPath))).ToLowerInvariant();
+                            MainForm.UseTempNinferHomeForTest(verHome);
+                            uiForm.SetNinferWinVersionCacheForTest("engine-v0.12.0-x", "aabbcc");
+                            uiForm.SetNinferWinShaForTest(bakSha);
+                            Check("DEC-198 当前 exe 与备份里某一份逐字节相同 → 认作「已回退」，重启后照样认得出（不吃会话状态）",
+                                uiForm.NinferVersionTextForTest.Contains("已回退")
+                                && uiForm.NinferVersionTextForTest.Contains("ninfer-serve-20261020-030252.exe")
+                                && !uiForm.NinferVersionTextForTest.Contains("未知构建"),
+                                uiForm.NinferVersionTextForTest);
+                            uiForm.SetNinferWinShaForTest("ffee1234567890abcdef");
+                            Check("DEC-198 备份里没有与当前 exe 相同的 sha → 不许乱认（仍报未知构建）",
+                                uiForm.NinferVersionTextForTest.Contains("未知构建"), uiForm.NinferVersionTextForTest);
+                            Directory.Delete(bakDir, true);
+                            Check("DEC-198 备份目录为空时不许误报「已回退」",
+                                uiForm.NinferVersionTextForTest.Contains("未知构建"), uiForm.NinferVersionTextForTest);
+                            uiForm.SetNinferWinShaForTest(null);
+                        }
+                        finally
+                        {
+                            MainForm.UseTempNinferHomeForTest(homeBakV);
+                            uiForm.SetNinferWinVersionCacheForTest("", "");
+                            uiForm.SetNinferWinShaForTest(null);
+                            try { MainForm.TryDeleteTree(verHome); } catch { /* 清不掉不影响结论 */ }
+                        }
+                    }
                     uiForm.SetNinferDirForTest("");
                     Check("DEC-097④ 引擎目录不对时说的是引擎不在（不是「未知」）",
                         uiForm.NinferVersionTextForTest.StartsWith("引擎不在"), uiForm.NinferVersionTextForTest);

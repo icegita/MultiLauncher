@@ -41,9 +41,9 @@ internal static partial class SelfTest
                 // 下面这条字面断言就是那道闸：谁把 `VerNumber()` 改回三段拼法，这里立刻红成 "v0.1.8"。
                 // DEC-181（动效三条）+ DEC-182（卡1 与后端方块左右相邻）= 界面形状没动 → 按 DEC-110 只升末位。
                 // 档位改判记账：我先按"成批新功能"发成 0.1.9.0，他判这批算补丁位 → 同批改判重发（DEC-182 那条注释里也记了）。
-                Check("版本号 = v0.1.8.2（csproj 0.1.8.2；DEC-181 动效三条 + DEC-182 卡1 结构改判，按末位）",
-                    MainForm.VersionTag() == "v0.1.8.2", MainForm.VersionTag());
-                Check("版本显示不吃进提交号与空白（InformationalVersion 形如 0.1.8.2+<sha>，'+' 之后必须切干净）",
+                Check("版本号 = v0.1.8.3（csproj 0.1.8.3；备份/回退三批修复（DEC-198/199/200），按末位）",
+                    MainForm.VersionTag() == "v0.1.8.3", MainForm.VersionTag());
+                Check("版本显示不吃进提交号与空白（InformationalVersion 形如 0.1.8.3+<sha>，'+' 之后必须切干净）",
                     !MainForm.VersionTag().Contains('+') && !MainForm.VersionTag().Contains(' '), MainForm.VersionTag());
                 // DEC-180 的机器版护栏：csproj 里**只许有一个** `<Version>` 真标签。这个坑本仓库栽过两次 ——
                 // 上次是历史注释把 `<Version>` 写在注释块外面 → MSBuild 后覆盖前 → 产物号悄悄回到旧值；
