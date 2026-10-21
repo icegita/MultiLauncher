@@ -24,6 +24,8 @@ internal sealed partial class SettingsForm : Form
     Label? _lblLlamaVer;
     Label? _lblNinferVer;               // DEC-096：Ninfer 那条更新链把版本换掉了，这一行要跟着重读
     Label? _lblNinferWslVer;            // DEC-097③：同一个窗里 WSL 那一侧的版本（读的是 VM 里的 git 提交）
+    Label? _lblAppUpdate;               // DEC-202：关于页「更新」那一行（本程序自更新的状态值）
+    RoundedTextBox? _boxAppUpdateUrl;    // DEC-202：关于页「更新源」那一格（自检要断它可编辑）
     RoundedTextBox? _boxLlamaDir;
     FlatButton? _btnRollback;
     Action? _refreshHandler;      // 刷新是广播（设置窗 + 更新窗都挂），关窗时摘自己那一份
@@ -204,6 +206,14 @@ internal sealed partial class SettingsForm : Form
         {
             _lblNinferWslVer.Text = _main.NinferWslVersionForSettings();
             _lblNinferWslVer.Parent?.PerformLayout();
+        }
+        // DEC-202：关于页「更新」那一行也吃这条广播（探到新版 / 检查失败当场变，不靠重开设置页）
+        if (_lblAppUpdate is not null)
+        {
+            var (t, c) = _main.AppUpdateRowForSettings();
+            _lblAppUpdate.Text = t;
+            _lblAppUpdate.ForeColor = c;
+            _lblAppUpdate.Parent?.PerformLayout();
         }
         if (_btnRollback is not null) _btnRollback.Enabled = !_main.UpdateUiBusy;
     }

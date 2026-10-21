@@ -22,7 +22,9 @@ namespace MultiLauncher;
 internal sealed class UpdateForm : Form
 {
     readonly MainForm _main;
-    readonly MainForm.ModuleView _v;      // 这一窗服务哪个模块 = 模块表那一行（DEC-096 起三条更新链共用这一个窗）
+    // DEC-202：以前这里钉死 `MainForm.ModuleView`（模块表那一行）。「本程序」是第 4 条链、不在模块表里，
+    // 所以放宽成 IUpdatePane（窗真正用到的那几项）。ModuleView 显式实现它 → 现有三条链一字不变。
+    readonly IUpdatePane _v;
     readonly string _side;                // "win" / "wsl"（DEC-107）
     readonly Label _grp, _verTitle, _ver, _actTitle, _status, _phase;
     readonly FlatButton _btnSkip, _btnDetail, _btnUpgrade, _btnClose;
@@ -40,12 +42,16 @@ internal sealed class UpdateForm : Form
 
     const int PadX = 18, LabelW = 92, RowH = 44, Gap = 10;
 
-    public UpdateForm(MainForm main, string key, string side = "win")
+    // 旧签名保留（DEC-202）：现有三条链与自检那一批 `new UpdateForm(main, "strata")` 全走它，行为一字不变。
+    // 键照模块表认（View(key) 认不出的键当场抛，不会"不认识的一律走 Strata 那条链"）。
+    public UpdateForm(MainForm main, string key, string side = "win") : this(main, main.View(key), side) { }
+
+    /// <summary>DEC-202：任何实现 <see cref="IUpdatePane"/> 的那一面都能开这扇窗（「本程序」= <see cref="AppUpdateCard"/>）。</summary>
+    public UpdateForm(MainForm main, IUpdatePane pane, string side = "win")
     {
         _main = main;
         _side = side == "wsl" ? "wsl" : "win";
-        // 加模块 = 模块表那一行要给齐更新窗那六件事（View(key) 认不出的键当场抛，不会"不认识的一律走 Strata 那条链"）
-        _v = main.View(key);
+        _v = pane;
         var sec = _v.Secondary;
         if (_side == "wsl" && sec is null)
             throw new InvalidOperationException("这条模块表行没有第二段（WSL 后端），开不了 WSL 窗：" + _v.Key);

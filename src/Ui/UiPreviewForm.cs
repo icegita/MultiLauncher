@@ -126,6 +126,10 @@ internal sealed partial class UiPreviewForm : Form
         MainForm.AutoStartRegistryDisabledForTest = true;
         MainForm.AutoStartRegistryWriteForTest = _ => { };
         MainForm.ExternalProbeDisabledForTest = true;   // DEC-160（BUG-068①）：探针也不许真问端口（判据同自检那一族）
+        // DEC-202：出图台要拍页头徽标 / 关于页那两行，但**一张图都不许联网**（探测结果由 SetAppOfferForTest 喂，
+        // 与"外部服务"那一档同一条口径：屏幕上的形状不许取决于上游今天发了什么）；更不许换掉自己。
+        MainForm.AppUpdateProbeDisabledForTest = true;
+        MainForm.AppSelfReplaceDisabledForTest = true;
         // DEC-097③④：出图台也不做那两趟有副作用的读取（读 1.5 GB 的 exe 算 sha / 进 VM 起 WSL），版本行拍缓存值那一档。
         // DEC-138（E-5）：这一道以前写在下面那个 try 的**最后一条** —— 前面任一 CreateDirectory / File.Copy 抛了，
         // catch 把它一起吞掉，闸就没上，探针真去读那支 1.5 GB 的文件、甚至把虚拟机拉起来。
@@ -347,6 +351,9 @@ internal sealed partial class UiPreviewForm : Form
             sfR.Close();
             return;
         }
+
+        ProbeAppUpdate(args);      // DEC-202：--uiprobe appupdate <目录>（页头徽标两态 + 关于页两行）
+        ProbeSwapDrill(args);      // DEC-202：--uiprobe swapdrill <目录>（helper 真跑演练：ok 路径 + 回滚路径）
 
         // toast 出图（DEC-066；2026-10-04 摆位改成窗口中下）：MultiLauncher.exe --uiprobe toast <目录>
         // 真 Toast 组件 + 假文案：四态各一张，再拍一张"贴着宿主窗（水平居中、距底 1/4 高）堆叠"的场景图。

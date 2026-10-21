@@ -213,6 +213,15 @@ internal sealed class TinyUpdate : Control
     }
 
     public string Tip = "打开更新窗（开窗即查一次）";
+
+    /// <summary>DEC-202：宿主可以改提示文字。原来只在 <see cref="OnHandleCreated"/> 设一次 —— 页头那枚
+    /// 在窄态（只留图标）要把版本号说在提示里，而那一刻还不知道探到的是哪一版。</summary>
+    internal void SetTip(string text)
+    {
+        Tip = text;
+        try { _tip.SetToolTip(this, text); } catch { /* 句柄还没建：OnHandleCreated 会用 Tip 再设一次 */ }
+    }
+
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);

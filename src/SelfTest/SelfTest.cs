@@ -114,6 +114,13 @@ internal static partial class SelfTest
         // 于是三条判据（模型行按钮 / 托盘组头 / 停用整组不出现）在他退壳时绿、开壳时红（r28 A 组那三条离群红 = BUG-068）。
         // "用户机器上恰好有什么在跑"不该决定用例红绿（BUG-052 同族，只是换到环境这一头）；那一档界面形状改由喂样本走真路径断。
         MainForm.ExternalProbeDisabledForTest = true;
+        // DEC-202（本程序自更新）：这两道闸必须**先于**功能挂上 —— 第 4 条链要连 GitHub、还要换掉自己的 exe。
+        //   ① 探一次就够，自检里一次都不许联网（那个"有没有新版"取决于上游今天发了什么，属于 BUG-052 同族：
+        //      用户机器上恰好有什么不该决定用例红绿）；
+        //   ② 替换流程一旦真跑，这一趟自检会把自己的 exe 改名 + 重启 = 一次自检把他装好的程序换掉。
+        // 判据走纯函数喂样本 + 证人位（AppProbeRunsForTest 恒 0），不靠真联网。
+        MainForm.AppUpdateProbeDisabledForTest = true;
+        MainForm.AppSelfReplaceDisabledForTest = true;
         // DEC-127⑥（他点名："自检时经常弹『界面参数已保存』,这是必要的还是什么其他原因?能不能不弹这个"）：
         // 不必要 —— 自检里 `SaveParameterEditsForTest` 就是要点那一次**真保存**才能断"落盘"，而 toast 是给人的落点，
         // 宿主窗没显示时它会退回屏幕工作区照样 Show()，于是他在旁边看它一条一条闪（同 DEC-111② 那一族：按进程收口）。
@@ -180,6 +187,8 @@ internal static partial class SelfTest
             MaterializeAndKnobs();
 
             UiLayoutChecks();
+
+            AppUpdateChecks();      // DEC-202：第 4 条链（本程序自更新）那一族 —— 纯函数喂样本，一次都不联网
 
             VersionAndUpdateChecks();
 

@@ -46,7 +46,7 @@ internal sealed partial class SettingsForm : Form
         ButtonRow(page, "编译快照回退 · WSL", "回到某一份编译快照，免重编、秒级。",
             "选择快照…", () => _main.NinferWslRollback());
         // DEC-110②：那句「版本 = 拿本地 exe 的 sha256 去上游反查…没有 PTX 回退。」按用户点名删掉（docs/.ai/参考-界面与参数对照.md 里有）。
-        ValueRow(page, "更新源 · WIN", "GitHub 的 releases 地址（网页或 api 都行）。", _s.NinferUpdateUrl, v => _s.NinferUpdateUrl = v);
+        ValueRow(page, "更新源 · WIN", "GitHub 的 releases 地址。", _s.NinferUpdateUrl, v => _s.NinferUpdateUrl = v);
         _lblNinferVer = AboutRow(page, "版本 · WIN", _main.NinferVersionForSettings(),
             openText: "更新…", onOpen: () => _main.OpenUpdateWindow(MainForm.NinferKey, this));   // 这一枚开 WIN 那扇（DEC-107）
         // DEC-110⑤：这一枚补的是"备份有、入口没有"那笔账（原来那句"用上面那行退回旧 exe"指的是配置备份，名不副实）。

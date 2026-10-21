@@ -389,12 +389,18 @@ public partial class MainForm
             // DEC-121：④ 快照外迁（跨卷 = 真复制几百 MB）跟在这后面同一条后台链，别摆构造函数。
             Task.Run(() =>
             {
+                // DEC-202：先看上一次"换掉自己"那一趟的回执（helper 写的 result.txt）——ok 记一行日志，
+                // fail 额外给一条 toast 并把手工兜底的路径写清。测试态不读（那不是他机器的账）。
+                if (!AppSelfReplaceDisabledForTest) ReadAppUpdateReceipt();
                 MigrateSnapshotsAtStartup(); SweepScratchAtStartup();
                 // DEC-136（C-5）：WSL 那侧的件清单以前只在"设置页改过 distro / 模型目录 / WSL 开关"时才 find 一次
                 // = 正常一次会话里 _ninferWslScanned 恒 false，界面上那句"VM 里没找到这个件"永不触发、
                 // 起服务前那条新增的 WSL 判据也永远只能放行。启动后台补这一次（它自己判模块与开关，没开立刻返回）；
                 // 测试态一次都不进 VM（DEC-097⑥ 那道按进程的闸）。
                 if (!VersionProbeDisabledForTest) RefreshNinferWslArtifacts();
+                // DEC-202：本程序自更新 —— 启动后台探一次（每进程一次；失败静默只进日志，启动期不打扰）。
+                // 闸门同理：自检 / 出图台一律不联网（那一位取决于上游今天发了什么，不该决定用例红绿）。
+                if (!AppUpdateProbeDisabledForTest) CheckAppUpdate(force: false);
             });
             // 开机自启带上 --tray 时只留在托盘，不弹主窗口（设置页「启动时隐藏到托盘」）
             if (_startHidden) Hide();

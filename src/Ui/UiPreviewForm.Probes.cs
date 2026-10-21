@@ -4,6 +4,155 @@ namespace MultiLauncher;
 // 2026-10-15 从 UiPreviewForm.cs 按分支整段搬出，块内一行未改。
 internal sealed partial class UiPreviewForm : Form
 {
+    /// <summary>DEC-202 出图：`--uiprobe appupdate &lt;目录&gt;`。
+    /// 拍「本程序自更新」三处入口里的两处 —— 页头徽标（无新版 / 有新版宽态 / 最小宽窄态）与关于页那两行，
+    /// 并把量出来的数打到控制台：徽标右缘到「打开配置」左缘的余量、文字左缘到分段控件右缘的余量（&lt;0 = 压上去了）。
+    /// 态由 `SetAppOfferForTest` 喂进去走真广播（`PokeUpdateUi` → `RefreshAppBadge`），不是画出来的示意图。</summary>
+    /// <summary>DEC-202 helper 演练：`--uiprobe swapdrill &lt;目录&gt;`。
+    /// 这是**唯一能真验 helper 的办法**（交接 §6：真替换要等下一次发版才有新版可升；helper 可以单独手跑演练）。
+    /// 在调用方给的隔离目录里造真可执行件，用生产代码同一份 `MainForm.SwapHelperText` 生成脚本并执行两趟：
+    ///   ① ok 路径 —— 新件是会驻留的可执行（cmd.exe 副本）→ 期望 result.txt=ok、exe 换成新件、`.old` 留着旧的；
+    ///   ② 回滚路径 —— 新件是会秒退的可执行（where.exe 副本）→ 期望 result.txt=fail start、exe 被换回旧件。
+    /// **不碰真 exe / 真程序目录**；进程名用 MLSwapDrill.exe，脚本里的 `taskkill /im` 误伤不到正牌壳。</summary>
+    static void ProbeSwapDrill(string[] args)
+    {
+        if (args.Length < 3 || args[1] != "swapdrill") return;
+        var dir = Path.GetFullPath(args[2]);
+        try { if (Directory.Exists(dir)) Directory.Delete(dir, true); } catch { }
+        var staging = Path.Combine(dir, "staging");
+        Directory.CreateDirectory(staging);
+        var exe = Path.Combine(dir, "MLSwapDrill.exe");
+        var newPath = exe + ".new";
+        var sysDir = Environment.SystemDirectory ?? @"C:\Windows\System32";
+        // 旧件用 cmd.exe 副本（本机实测：控制台 exe 的改名副本能起；GUI 的那几个一律被策略挡）。
+        // 新件用 where.exe 副本 —— 它会秒退，专门用来逼出「新版起不来 → 第二层回滚」那一条。
+        var staying = Path.Combine(sysDir, "cmd.exe");
+        var quick = Path.Combine(sysDir, "where.exe");
+
+        string Run(string which, string newSource, string oldSource)
+        {
+            File.Copy(oldSource, exe, true);
+            File.Copy(newSource, newPath, true);
+            var result = Path.Combine(staging, "result.txt");
+            if (File.Exists(result)) File.Delete(result);
+            var helper = Path.Combine(staging, which + ".cmd");
+            // pid 给一个必然不存在的值 → "等进程消失"那一段立刻过（真跑时等的是壳自己）
+            File.WriteAllText(helper, MainForm.SwapHelperText(exe, newPath, staging, 999999), new System.Text.UTF8Encoding(false));
+            var psi = new System.Diagnostics.ProcessStartInfo("cmd.exe") { UseShellExecute = false, CreateNoWindow = true };
+            psi.ArgumentList.Add("/c");
+            psi.ArgumentList.Add(helper);
+            using (var p = System.Diagnostics.Process.Start(psi)!) p.WaitForExit(120000);
+            Thread.Sleep(600);
+            var receipt = File.Exists(result) ? File.ReadAllText(result).Trim() : "(没有 result.txt)";
+            var exeIsNew = File.Exists(exe) && FilesEqual(exe, newSource);
+            var exeIsOld = File.Exists(exe) && FilesEqual(exe, oldSource);
+            var oldKept = File.Exists(exe + ".old");
+            KillDrill();
+            Console.WriteLine($"swapdrill: {which} 回执=[{receipt}] exe=新件({exeIsNew}) exe=旧件({exeIsOld}) .old在({oldKept})");
+            return receipt;
+        }
+
+        var failReceipt = Run("rollback", quick, staying);
+        // 这台机器对"改了名的系统 GUI exe"一律不让起（notepad / mstsc / control 各试一遍全是 0 进程，
+        // 与"发布出来的 exe 起不来"是同一族策略），所以 **ok 路径（新 exe 真起来了 → 回执 ok）验不了**：
+        // 它要等下一次发版、拿真新版本实跑才验得到（交接 §6 已写明）。这里能验到的是：
+        //   ① 移动链（exe → .old、.new → exe）；
+        //   ② 第二层回滚（新件起不来 → 3 秒后换回 .old → 回执 fail start）；
+        //   ③ 回执真的写出来了、路径真的落在 staging 里。
+        Console.WriteLine("swapdrill: 回滚路径=" + failReceipt.StartsWith("fail", StringComparison.OrdinalIgnoreCase)
+            + "（ok 路径需真新版实跑，本机起不来改名 GUI exe）");
+        Environment.Exit(0);
+    }
+
+    static bool FilesEqual(string a, string b)
+    {
+        try
+        {
+            var ba = File.ReadAllBytes(a);
+            var bb = File.ReadAllBytes(b);
+            return ba.AsSpan().SequenceEqual(bb);
+        }
+        catch { return false; }
+    }
+
+    static void KillDrill()
+    {
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo("taskkill")
+            { UseShellExecute = false, CreateNoWindow = true };
+            psi.ArgumentList.Add("/f"); psi.ArgumentList.Add("/im"); psi.ArgumentList.Add("MLSwapDrill.exe");
+            using var p = System.Diagnostics.Process.Start(psi);
+            p?.WaitForExit(8000);
+        }
+        catch { /* 没在跑就算了 */ }
+    }
+
+    static void ProbeAppUpdate(string[] args)
+    {
+        if (args.Length < 3 || args[1] != "appupdate") return;
+        Directory.CreateDirectory(args[2]);
+        using var main = new MainForm();
+        main.ClearStartHiddenForTest();          // 别吃他配置里的「启动时隐藏到托盘」（否则屏幕取图全废）
+        main.CreateControl();
+        UiTheme.CaptureDpi(main.Handle);
+        main.StartPosition = FormStartPosition.Manual;
+        main.Location = new Point(60, 60);
+        main.Show();
+        void Pump() { for (int i = 0; i < 8; i++) { Application.DoEvents(); Thread.Sleep(50); } }
+        Pump();
+
+        // ① 没探到新版：页头不许凭空多一块
+        CaptureCrop(main, main.PageHeadBoundsInClient(), Path.Combine(args[2], "appupdate-01-页头-无新版.png"), 2);
+        Console.WriteLine("appupdate: 无新版 " + main.AppBadgeStateForTest());
+
+        // ② 喂一个"探到新版"的态
+        main.SetAppOfferForTest("v0.1.8.5", "2026-10-21T10:00:00Z", skipped: false);
+        Pump();
+        CaptureCrop(main, main.PageHeadBoundsInClient(), Path.Combine(args[2], "appupdate-02-页头-有新版本-宽态.png"), 2);
+        var wide = main.AppBadgeGeomForTest();
+        Console.WriteLine($"appupdate: 宽态 {main.AppBadgeStateForTest()} 左余量={wide.OverlapLeft} 到按钮={wide.GapToButton} 文字到图标={wide.LabelIconGap}");
+        Console.WriteLine("appupdate: 图标几何 " + main.AppBadgeIconGeomForTest());
+
+        // ③ 窄态兜底：真机上最小客户宽 960、144 DPI 下 960 逻辑宽放得下文字，**这个分支在真机上摸不到**。
+        // 所以这一张把最小宽临时放开来一档一档压窄（只改这个探针实例的内存，不碰他 ini、不改真机最小宽），
+        // 压到"只留图标"那一档就拍下来 —— 顺带证明兜底真的会退，而不是写在代码里没人走到。
+        main.MinimumSize = Size.Empty;
+        int narrowAt = -1;
+        foreach (var lw in new[] { 780, 750, 720, 690, 660 })
+        {
+            main.ClientSize = new Size(UiTheme.S(main, lw), main.ClientSize.Height);
+            Application.DoEvents(); Thread.Sleep(120);
+            Console.WriteLine($"appupdate: 试 {lw} 逻辑宽 → {main.AppBadgeStateForTest()}");
+            if (main.AppBadgeStateForTest().Contains("/narrow|", StringComparison.Ordinal)) { narrowAt = lw; break; }
+        }
+        Pump();
+        CaptureCrop(main, main.PageHeadBoundsInClient(), Path.Combine(args[2], "appupdate-03-页头-压窄-只留图标.png"), 2);
+        var narrow = main.AppBadgeGeomForTest();
+        Console.WriteLine($"appupdate: 压窄（{narrowAt} 逻辑宽）{main.AppBadgeStateForTest()} 左余量={narrow.OverlapLeft} 到按钮={narrow.GapToButton} 文字到图标={narrow.LabelIconGap}");
+
+        // ④ 关于页「本程序」组（版本 / 作者 / 更新源 / 更新 / 帮助）
+        // 取景吃**客户区**那一张（DrawToBitmap）：PrintWindow 对没被 DWM 合成过的窗会拍出全黑（BUG-073 的教训）
+        using var sf = new SettingsForm(main, new Settings());
+        sf.ShowTabForTest(sf.TabCountForTest - 1);
+        sf.Show();
+        for (int i = 0; i < 10; i++) { Application.DoEvents(); Thread.Sleep(50); }
+        CaptureClient(sf, Path.Combine(args[2], "appupdate-04-关于页-本程序组.png"));
+        Console.WriteLine("appupdate: " + ShotCount(args[2], "4（尝试数）") + "  (DPI=" + UiTheme.Dpi + ")");
+        // 可选第 4 个参数 = 一份**真的** `releases/latest` JSON：只打印解析结果，不联网、不动界面。
+        // 施工期用它核对「资产命名 / .sha256 同名 / 体积 / 发布日」这几条规则跟真仓库对不对得上。
+        if (args.Length >= 4 && File.Exists(args[3]))
+        {
+            var info = MainForm.ParseAppRelease(File.ReadAllText(args[3]));
+            Console.WriteLine($"appupdate: 解析样本 → tag={info.Tag} exe={info.AssetName} sha={info.ShaName} 体积={info.Size} 发布={info.Published}");
+            Console.WriteLine("appupdate: 更新源三档 → 网页=" + MainForm.AppRepoApiOf("https://github.com/icegita/MultiLauncher")
+                + " ｜ 空=" + MainForm.AppRepoApiOf("") + " ｜ 填坏=" + MainForm.AppRepoApiOf("这不是地址"));
+        }
+        // 这一支不走消息循环：`sf.Close()` / `main.Close()` 在"没有 Application.Run 的进程"里会卡在窗体收尾
+        //（实测挂三分钟、一行不落），所以拍完直接按 PID 收 —— 与 wipe 那一支同一口径。
+        Environment.Exit(0);
+    }
+
     static void ProbeToastAndModelBadge(string[] args)
     {
         if (args.Length >= 3 && args[1] == "toast")

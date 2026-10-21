@@ -66,6 +66,9 @@ public partial class MainForm
     {
         menu.Items.Clear();
         menu.Items.Add(MenuItem("显示主界面", (_, _) => ShowFromTray()));
+        // DEC-202：「本程序」那一项在「设置」上方（方案 §4.3 定的行序）。它不是模块，
+        // 所以不用 UpdateSidesFor 那一套；文字三态另写一处（AppUpdateMenuLabel —— 别塞进按模块表认键的 UpdateMenuLabel）
+        menu.Items.Add(MenuItem(AppUpdateMenuLabel(), (_, _) => OpenAppUpdateWindow(null), AppUpdateMenuEnabled()));
         menu.Items.Add(MenuItem("设置", (_, _) => OpenSettingsFromTray()));
         menu.Items.Add(new ToolStripSeparator());
         foreach (var m in ModuleRegistry.All.Where(m => m.Enabled(_config.Current)))

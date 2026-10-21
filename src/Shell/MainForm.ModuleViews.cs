@@ -42,7 +42,8 @@ public partial class MainForm
     internal const string NinferKey = ModelEntry.BackendNinfer;      // DEC-096：第三个模块键
 
     /// 一个模块对界面的完整呈现面。required init 成员 = 加模块时必须表态的项，漏了编译不过。
-    internal sealed class ModuleView
+    /// DEC-202：同时实现 <see cref="IUpdatePane"/>（显式实现，见类末尾）—— 更新窗从此只认那个接口。
+    internal sealed class ModuleView : IUpdatePane
     {
         // —— 身份 ——
         public required string Key { get; init; }
@@ -203,6 +204,25 @@ public partial class MainForm
         internal readonly record struct Card1Metrics(Func<string, int> BoxW, Func<string, Font, int> Need, Func<int, int> S);
 
         public string DisplayName => ModuleRegistry.All.First(x => x.Key == Key).DisplayName;
+
+        // —— DEC-202：更新窗要的那一面（显式实现，签名与成员名一个不改）——
+        // 为什么显式：本表里 `Offer` / `StatusMemo` / `UpdateBusy` 是 `Func<…>` **属性**，接口要的是方法；
+        // 显式实现让两个家并存、互不遮蔽，也让"窗只要这几项"这件事在接口那一份写清楚（见 IUpdatePane）。
+        string IUpdatePane.Key => Key;
+        string IUpdatePane.DisplayName => DisplayName;
+        string? IUpdatePane.PrimarySectionTitle => PrimarySectionTitle;
+        UpdateSection? IUpdatePane.Secondary => Secondary;
+        UpdateOffer IUpdatePane.Offer() => Offer();
+        (string Memo, Color Color) IUpdatePane.StatusMemo() => StatusMemo();
+        bool IUpdatePane.UpdateBusy() => UpdateBusy();
+        bool IUpdatePane.UpdateOfferSeen() => UpdateOfferSeen();
+        string IUpdatePane.CurrentVersion() => CurrentVersion();
+        void IUpdatePane.CheckUpdateNow() => CheckUpdateNow();
+        void IUpdatePane.ShowUpdateDetail() => ShowUpdateDetail();
+        void IUpdatePane.StartUpgrade() => StartUpgrade();
+        void IUpdatePane.SkipOffer() => SkipOffer();
+        void IUpdatePane.UnskipOffer() => UnskipOffer();
+        void IUpdatePane.RequestCancelUpdate() => RequestCancelUpdate();
     }
 
     // ---------------- 表本体 ----------------

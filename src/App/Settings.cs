@@ -169,6 +169,15 @@ public class Settings
     public string SkipVersion { get; set; } = "";            // 已跳过的远端版本
     public string LlamaSkipVersion { get; set; } = "";       // llama.cpp 各跳各的（DEC-049：与 Strata 那份互不影响）
 
+    // ================= 本程序自更新（DEC-202，第 4 条链）=================
+    // 「本程序」不是引擎后端、不进模块表，但它照样要一格更新源与一份跳过位 —— 都落 [Current]。
+    // [Current] 是反射全属性读写，新键不必登记读写代码；但设置页保存那一趟是**手写白名单**
+    //（MainForm.CopySettingsWindowFields），新字段不加进去 = 点「保存」即丢值（静默，不是编译错）。
+    public string AppUpdateUrl { get; set; } = "https://github.com/icegita/MultiLauncher";
+                                                              // 本程序那条更新链的上游仓库（网页或 api 地址都吃，口径同另三条）。
+                                                              // 留空或认不出 owner/repo = 回落到上面这个默认值（填坏不瘫痪整条链）
+    public string AppSkipVersion { get; set; } = "";          // 已跳过的远端版本（与另三条链同族，各记各的）
+
     public Settings Clone() => (Settings)MemberwiseClone();
 }
 

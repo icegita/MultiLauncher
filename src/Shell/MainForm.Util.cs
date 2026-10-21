@@ -236,6 +236,9 @@ public partial class MainForm
         to.LlamaModelsMax = from.LlamaModelsMax;
         to.LlamaSleepIdleMinutes = from.LlamaSleepIdleMinutes;
         to.LlamaUpdateUrl = from.LlamaUpdateUrl;
+        // DEC-202：关于页那一格「更新源」（本程序自更新）。**必须加在这里** —— `CollectSettings()` 是
+        // `_config.Current.Clone()` 起手的，新字段天然带得过去；真正会丢值的是这张逐字段白名单。
+        to.AppUpdateUrl = from.AppUpdateUrl;
         // —— Ninfer（DEC-096）：设置页 Ninfer 节负责的那一批；段级格子（args 里那些）不走这条路 ——
         to.EnableNinfer = from.EnableNinfer;
         to.NinferWinOn = from.NinferWinOn;

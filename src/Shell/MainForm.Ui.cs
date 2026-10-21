@@ -291,6 +291,25 @@ public partial class MainForm
                                  "llama = " + DisplayDataPath(DefaultRouterIniPath()) + "（界面改的就是它、引擎读的也是它，不重新生成）。" +
                                  "Strata 那份是产物、下次启动会重写，要长期改就动源文件（日志里会给路径）");
         Tip.Set(_btnSettings, "打开设置（通用 / 每个启用模块各一节 / 关于）");
+        // DEC-202：本程序的新版提示落在「打开配置」左边（方案 §4.1；标题栏那条已否掉）。
+        // 只在探到新版时出面 —— 文字 + 一枚绿色上箭头成组，**整块可点**（都开更新窗，不直接升级）。
+        _lblAppBadge = new Label
+        {
+            // 字号跟左栏「模块状态」/「状态」那一行同一档（_fSmall 8.5pt），不在页头另开一号
+            AutoSize = true, Text = "", ForeColor = UiTheme.Brand, BackColor = UiTheme.Window,
+            Font = _fSmall, Cursor = Cursors.Hand, Visible = false,
+        };
+        _lblAppBadge.Click += (_, _) => OpenAppUpdateWindow(this);
+        _tinyAppBadge = new TinyUpdate
+        {
+            Backdrop = UiTheme.Window,
+            // 尺寸与左栏「版本」行那枚一致（S(12)）—— 同一枚控件、同一个号，别在页头另开一档
+            Size = new Size(UiTheme.S(this, 12), UiTheme.S(this, 12)),
+            NewVersion = true, Visible = false,
+        };
+        _tinyAppBadge.Click += (_, _) => OpenAppUpdateWindow(this);
+        pageHead.Controls.Add(_lblAppBadge);
+        pageHead.Controls.Add(_tinyAppBadge);
         pageHead.Controls.Add(_btnOpenConfig);
         pageHead.Controls.Add(_btnSettings);
         pageHead.Layout += (_, _) =>
@@ -303,6 +322,7 @@ public partial class MainForm
             _btnOpenConfig.Location = new Point(_btnSettings.Left - _btnOpenConfig.Width - UiTheme.S(this, 8), top);
             // 分段控件比按钮高（含胶囊内缩）：与右侧按钮**按中线对齐**（原来固定 +S(2)，重心偏下）
             _segModules.Location = new Point(UiTheme.S(this, 2), top + (RowH - _segModules.Height) / 2);
+            LayoutAppBadge(top);
         };
 
         // Dock 顺序：Fill 先加，Top 后加；后加的 Top 更靠上，所以「间隔」要插在它后面的卡片之前

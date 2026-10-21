@@ -746,7 +746,8 @@ internal static partial class SelfTest
                 W("tray: " + string.Join(" | ", tray));
                 List<string> TrayWanted(IEnumerable<LauncherModule> mods)
                 {
-                    var e = new List<string> { "显示主界面/可点", "设置/可点", "──" };
+                    // DEC-202：第二行是「检查更新 · 本程序」（在「设置」上方；它不是模块，所以不进下面那段循环）
+                    var e = new List<string> { "显示主界面/可点", "检查更新 · 本程序/可点", "设置/可点", "──" };
                     foreach (var m in mods)
                     {
                         e.Add(m.DisplayName + " · * 组头占位");   // 组头文案带实时状态，只断"以显示名开头 + 是组头"

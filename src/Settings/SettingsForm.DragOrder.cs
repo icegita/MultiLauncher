@@ -397,7 +397,7 @@ internal sealed partial class SettingsForm : Form
         GroupTitle(page, "维护");
         // DEC-110④：三节的「维护」组同一个形状，从上往下 = **更新源 → 版本 → 回退 → 各自模块独有**。
         // Strata 这一格以前没有（仓库地址写死在代码里），按用户"补一行"补上；填坏回落默认，见 StrataRepoApiOf。
-        ValueRow(page, "更新源", "GitHub 仓库地址（网页或 api 都行）。", _s.StrataUpdateUrl, v => _s.StrataUpdateUrl = v);
+        ValueRow(page, "更新源", "GitHub 仓库地址。", _s.StrataUpdateUrl, v => _s.StrataUpdateUrl = v);
         // DEC-058：检查、升级、进度、取消全进了「更新」窗（一模块一窗），设置页这里只留本机版本 + 一枚入口。
         // 原来那行说明文字（"只查 GitHub…会在下面长出…"）按用户要求删掉——窗里每一态都有字，不用再解释一遍。
         var (vSrc0, vEng0) = _main.VersionsForSettings();
@@ -446,6 +446,13 @@ internal sealed partial class SettingsForm : Form
         GroupTitle(page, "本程序");
         AboutRow(page, "版本", MainForm.VersionTag());
         AboutRow(page, "作者", "iCeGiTa");
+        // DEC-202：行序 = 版本 / 作者 / 更新源 / 更新 / 帮助。
+        // 「更新源」与另三节「维护」组那一格同形状（可改；留空或认不出 = 回落默认，填坏不拦保存）；
+        // 「更新」= 只读状态值 + 一枚「更新…」开第 4 扇窗（与三个模块节那三行同一套字）。
+        _boxAppUpdateUrl = ValueRow(page, "更新源", "GitHub 仓库地址。留空 = 用默认。", _s.AppUpdateUrl, v => _s.AppUpdateUrl = v);
+        var (appUpdText, appUpdColor) = _main.AppUpdateRowForSettings();
+        _lblAppUpdate = AboutRow(page, "更新", appUpdText, appUpdColor,
+            openText: "更新…", onOpen: () => _main.OpenAppUpdateWindow(this));
         // 说明书 = 内嵌在 exe 里的那份（csproj 的 EmbeddedResource / LogicalName=manual.md）。
         // 行名用「帮助」而不是「使用说明」：它跟「版本 / 作者」一样描述**本程序自己**，不是某个位置。
         // 按钮仍叫「打开」，与另三行同一套字 —— 一眼看得出"这一类行都是去某个地方"。
@@ -510,6 +517,13 @@ internal sealed partial class SettingsForm : Form
 
     // 自检用：各 Tab 页的自绘滑条（看滚轮路由有没有挂上）
     internal UiScrollbar[] BarsForTest => _bars;
+
+    /// <summary>出图 / 自检用：一共几节（「关于」= 最后一节）。DEC-202 的出图要按名字找不到 Tab，
+    /// 用它算末节索引 —— 加模块后节数会变，写死 4 就漂了。</summary>
+    internal int TabCountForTest => _pages.Length;
+
+    /// <summary>DEC-202 自检用：关于页「更新源」那一格是不是可编辑（`ValueRow` 的输入框，ReadOnly=false）。</summary>
+    internal bool AppUpdateUrlEditableForTest => _boxAppUpdateUrl is { } b && !b.Inner.ReadOnly;
 
     // 自检用：页签胶囊的净高（2026-10-02 反馈：应与按钮同高，见 SegmentedControl.ApplyDpiHeight）
     internal int TabsPillHeightForTest => _segTabs.PillHeightForTest;

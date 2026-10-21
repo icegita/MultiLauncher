@@ -736,8 +736,8 @@ internal static partial class SelfTest
                 var tn = new MdDoc().TableProbeForTest("| 列A | 列B |\n| --- | --- |\n| a1 | b1 |\n", 40);
                 Check("表格分支反面：放不下就整体退回段落（没有定位行）",
                     tn.TableLines == 0, $"表行={tn.TableLines} 宽=40");
-                Check("关于节行顺序正确（⑦ DEC-055：三处位置各带「打开」；引擎那组已挪到 Strata 节）",
-                    InOrder(SRow("settings-关于"), "本程序", "版本", "作者", "帮助", "位置", "配置文件", "数据目录", "日志文件")
+                Check("关于节行顺序正确（⑦ DEC-055：三处位置各带「打开」；DEC-202 加「更新源 / 更新」两行；引擎那组已挪到 Strata 节）",
+                    InOrder(SRow("settings-关于"), "本程序", "版本", "作者", "更新源", "更新", "帮助", "位置", "配置文件", "数据目录", "日志文件")
                     && new[] { "配置文件", "数据目录", "日志文件" }.All(k =>
                         SRow("settings-关于").Split('|').Any(seg => seg.Trim().StartsWith(k + "+") && seg.Contains("+打开")))
                     && !SRow("settings-关于").Contains("引擎"), SRow("settings-关于"));

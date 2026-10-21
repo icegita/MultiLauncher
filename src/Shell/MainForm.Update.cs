@@ -192,6 +192,7 @@ public partial class MainForm
         foreach (Action? cb in _updateUiRefresh?.GetInvocationList() ?? Array.Empty<Delegate>())
         { try { cb!(); } catch { /* 某个窗正在关 */ } }
         RefreshSidebarUpdateButtons();     // DEC-108：左栏那枚小箭头的灰/绿两态也吃这条广播
+        RefreshAppBadge();                 // DEC-202：页头「本程序」那枚徽标同一条节拍
     }
 
 }
