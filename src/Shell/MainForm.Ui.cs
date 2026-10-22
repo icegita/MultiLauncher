@@ -286,10 +286,10 @@ public partial class MainForm
         }
         _btnOpenConfig.Click += (_, _) => OpenActiveConfig();
         _btnSettings.Click += (_, _) => OpenSettings();
-        Tip.Set(_btnOpenConfig, "打开引擎实际读的那一份（点「启动」用的同一条生成逻辑，按当前界面参数重新生成后再打开）：" +
-                                 "Strata = " + DisplayDataPath(RealRunConfigDir()) + "\\<tag>.json（跟随选中的模型）；" +
-                                 "llama = " + DisplayDataPath(DefaultRouterIniPath()) + "（界面改的就是它、引擎读的也是它，不重新生成）。" +
-                                 "Strata 那份是产物、下次启动会重写，要长期改就动源文件（日志里会给路径）");
+        Tip.Set(_btnOpenConfig, "打开当前页这一份配置：Strata = " + DisplayDataPath(RealRunConfigDir()) + "\\" + ModelParamsFileName +
+                                 "（一个模型一段：界面那 16 格 + 你自己加的 ArgsN 都在这份里；引擎实读的产物在旁边的 run\\ 子目录，不用管）；" +
+                                 "llama / Ninfer = 它们各自的家底 ini（界面改的就是它、引擎读的也是它）。" +
+                                 "壳自己的 MultiLauncher.ini 在设置页「通用 → 路径」那一行");
         Tip.Set(_btnSettings, "打开设置（通用 / 每个启用模块各一节 / 关于）");
         // DEC-202：本程序的新版提示落在「打开配置」左边（方案 §4.1；标题栏那条已否掉）。
         // 只在探到新版时出面 —— 文字 + 一枚绿色上箭头成组，**整块可点**（都开更新窗，不直接升级）。

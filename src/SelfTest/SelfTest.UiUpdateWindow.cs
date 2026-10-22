@@ -724,7 +724,11 @@ internal static partial class SelfTest
                 // 滚动偏移的**上界**也要钳：只钳 0 的话，拖选到上下边缘的自动滚动（OnMouseMove 里 ±S(14)）
                 // 会把偏移推出「内容总高 − 可视高」之外 → 内容被推出视野、OnPaint 开头 g.Clear 之后画不出
                 // 东西 → 一大片空白（他实跑在两个内容窗上抓到的）。滚轮与滑条两条路各有钳，唯独这条没有。
-                var cl = new MdDoc().ScrollYClampForTest("| 列A | 列B |\n| --- | --- |\n" + new string('补', 3000), 600, 99999);
+                // 2026-10-22（他问"自检为什么慢"）：这里原来喂的是**一行 3000 个字**，逐字折行量了一个
+                // 31.5 秒（自检总时长的一半就耗在这一条上）。改成 60 个短行 —— 要的只是"内容总高远超可视高"，
+                // 60 行 × 行高同样够，而每行只有一个字，量起来是毫秒级。
+                var tallMd = "| 列A | 列B |\n| --- | --- |\n" + string.Join("\n", Enumerable.Repeat("补", 60));
+                var cl = new MdDoc().ScrollYClampForTest(tallMd, 600, 99999);
                 Check("滚动偏移上界也要钳（拖选到边缘不许把内容推出视野、留大片空白）",
                     cl.Max > 0 && cl.Got == cl.Max, $"上界={cl.Max} 实际={cl.Got}");
                 Check("表格分支：行内代码文字用默认色（不再是品牌绿；胶囊底另画）",
@@ -736,11 +740,19 @@ internal static partial class SelfTest
                 var tn = new MdDoc().TableProbeForTest("| 列A | 列B |\n| --- | --- |\n| a1 | b1 |\n", 40);
                 Check("表格分支反面：放不下就整体退回段落（没有定位行）",
                     tn.TableLines == 0, $"表行={tn.TableLines} 宽=40");
-                Check("关于节行顺序正确（⑦ DEC-055：三处位置各带「打开」；DEC-202 加「更新源 / 更新」两行；引擎那组已挪到 Strata 节）",
-                    InOrder(SRow("settings-关于"), "本程序", "版本", "作者", "更新源", "更新", "帮助", "位置", "配置文件", "数据目录", "日志文件")
-                    && new[] { "配置文件", "数据目录", "日志文件" }.All(k =>
-                        SRow("settings-关于").Split('|').Any(seg => seg.Trim().StartsWith(k + "+") && seg.Contains("+打开")))
+                Check("关于节行顺序正确（DEC-055/202；DEC-209② 起「位置」整组搬去通用 —— 这一节只讲本程序自己）",
+                    InOrder(SRow("settings-关于"), "本程序", "版本", "作者", "更新源", "更新", "帮助")
+                    && !SRow("settings-关于").Contains("位置") && !SRow("settings-关于").Contains("数据目录")
+                    && !SRow("settings-关于").Contains("日志文件")
                     && !SRow("settings-关于").Contains("引擎"), SRow("settings-关于"));
+                // 2026-10-22（DEC-211，他点名）：这组**置顶**、组名改「路径」、只留两行（配置文件 / 程序目录）——
+                // 「数据目录 / 日志目录」按他红框删掉。形状照三个模块节的「模型配置」：名称 + 全路径 + 一枚「打开」。
+                Check("通用节「路径」在最顶端、只有两行（配置文件 / 程序目录）且各带「打开」（DEC-211）",
+                    InOrder(SRow("settings-通用"), "路径", "配置文件", "程序目录", "模块")
+                    && new[] { "配置文件", "程序目录" }.All(k =>
+                        SRow("settings-通用").Split('|').Any(seg => seg.Trim().StartsWith(k + "+") && seg.Contains("+打开")))
+                    && !SRow("settings-通用").Contains("数据目录") && !SRow("settings-通用").Contains("日志目录"),
+                    SRow("settings-通用"));
                 // 说明书 = 内嵌资源（csproj 的 EmbeddedResource + LogicalName=manual.md）；关于页「帮助」那枚读的就是它
                 var manualMd = Dialogs.ManualMarkdown();
                 Check("说明书内嵌资源在（关于页「帮助」那一枚读的就是它）",

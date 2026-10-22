@@ -630,7 +630,7 @@ internal static partial class SelfTest
                 // DEC-097④：那一对缓存键要进得出 ini（"固定"= 活得过重启）；它们不是参数格，落 [Current]
                 var vset = new Settings { NinferWinVersion = "engine-v0.12.0-x", NinferWinVersionSha = "aa",
                                           NinferWslVersion = "v0.6.1-3-g1a2b3c4", NinferWslVersionSha = "bb" };
-                var vlines = MainForm.BuildConfigLines(vset, new Dictionary<string, Settings>(),
+                var vlines = MainForm.BuildConfigLines(vset,
                     new MainForm.WindowRect(10, 20, 300, 400, false));
                 var vback = new Settings();
                 MainForm.ParseConfigLines(vlines, vback, new Dictionary<string, Settings>(),

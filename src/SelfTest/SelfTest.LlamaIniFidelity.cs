@@ -353,7 +353,7 @@ internal static partial class SelfTest
                             LlamaCtx = "131072", LlamaKv = "q8_0 / q8_0", LlamaFlashAttn = true,
                             RouterIni = @"X:\llama\llama_models.ini", Port = "8081",
                         },
-                        new Dictionary<string, Settings>(), new MainForm.WindowRect(10, 20, 300, 400, false));
+                        new MainForm.WindowRect(10, 20, 300, 400, false));
                     Check("退役键不再写出：[Current] 里没有 LlamaTemperature / LlamaCtx / LlamaKv / LlamaFlashAttn / RouterIni",
                         !retired.Any(l => l.StartsWith("LlamaTemperature=")) && !retired.Any(l => l.StartsWith("LlamaCtx="))
                         && !retired.Any(l => l.StartsWith("LlamaKv=")) && !retired.Any(l => l.StartsWith("LlamaFlashAttn="))

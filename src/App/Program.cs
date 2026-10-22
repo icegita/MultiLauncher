@@ -117,6 +117,9 @@ public partial class MainForm : Form
     //（口径同 data	mp\ 的副本纪律：自检只往 tmp 里写，写完把路径改回来）。一处收口，别在调用点各拼各的。
     internal static void UseTempConfigForTest(string path) => ConfigPath = path;
     internal static string ConfigPathForTest => ConfigPath;
+    /// <summary>壳自己这份 ini 的全路径（与 <see cref="MainForm.RouterIniPath"/> / <see cref="MainForm.NinferIniPath"/>
+    /// 同一族命名）。设置页「通用 → 位置」那一行显示它、并据此开「打开」。</summary>
+    internal static string LauncherIniPath() => ConfigPath;
 
     // DEC-139：`--selftest` 没带第三个参数时的 Strata 落点 = **他自己配的那一格**（ini 里的 `Root=`），
     // 不再是"exe 的父目录"。那条老默认在开发目录里就没对过（`开发目录` 也不是 Strata），只是每次都被显式参数盖掉了；

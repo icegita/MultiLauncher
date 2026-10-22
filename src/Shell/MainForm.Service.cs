@@ -214,9 +214,36 @@ public partial class MainForm
         if (message.Length > 0) LogS(message);
     }
 
+    // DEC-211（2026-10-22，他报"改 ini 停止再启动不生效"）：拉起之前比对一次参数文件的版本戳 ——
+    // 两次启动之间被手改过就重读。为什么非要有这一步：内存里的 `ModelSnaps` 只在**启动外壳**时读一次文件，
+    // 之后改文件对它没有任何影响；而"停止 → 再启动"本来只重启引擎、不重读家底，于是他改完看起来毫无反应。
+    // 只有版本戳变了才重读（没手改时一个字节都不动，界面上没保存的草稿照旧参与手动启动）。
+    // **两个入口都要调**（2026-10-22 补）：`StartService`（真起引擎）+ `StartServer`（路由模式只立网关那一支，
+    // 他点「停止」再「启动」走的正是后者 —— 只挂前者的话界面与内存永远追不上文件）。
+    bool ReloadModelParamsFromDiskIfChanged(string? focusTag)
+    {
+        var notes = new List<string>();
+        var touched = ReloadModelSnapsIfChanged(_config.ModelSnaps, notes, out var reloaded);
+        foreach (var n in notes) LogS(n);
+        if (!reloaded || touched.Count == 0) return false;
+        LogS($"参数文件被改过，已重读：{string.Join("、", touched)}（按文件里那份起）");
+        if (focusTag is not null && focusTag.Length > 0
+            && touched.Contains(focusTag, StringComparer.OrdinalIgnoreCase)
+            && _config.ModelSnaps.TryGetValue(focusTag, out var freshSnap))
+        {
+            ApplyModelFields(freshSnap, _config.Current);
+            if (!_applying) ApplySettings(_config.Current);     // 界面卡也换成文件里的值，免得又落回"改了没反应"的错觉
+            SyncModelBaselineFromRecord(focusTag);
+        }
+        return true;
+    }
+
     void StartServer()
     {
         if (_process is { HasExited: false }) return;
+        // DEC-211：点「启动」这一下就先把被手改过的参数重读进来（路由模式下只立网关、不走 StartService，
+        // 但界面卡与内存字典得先跟文件对上 —— 等第一个请求真加载模型时用的就是重读后的这份）。
+        ReloadModelParamsFromDiskIfChanged(_config.Current.Model);
         // Strata 的路由模式：只把网关立起来，模型等第一个 /v1 请求再加载（B 段：模式按模块各自记忆）
         if (_routeModeStrata)
         {
@@ -255,6 +282,8 @@ public partial class MainForm
             LogS("启动被拒：端口上已有服务在跑");
             return false;
         }
+        // DEC-211：拉起前先把被手改过的参数重读进来（这条路径也覆盖网关唤醒 / 切件）
+        ReloadModelParamsFromDiskIfChanged(tag);
         var s = StartSettingsFor(tag, openBrowser, wakeFromRecord);
         var entry = _models.Find(m => m.Tag == tag);
         if (entry is null)
@@ -289,7 +318,12 @@ public partial class MainForm
             _strataFailed = true;       // 与 Ninfer 那条 preflight 同档：起不来就该看得见（红灯 + 弹窗由调用方给）
             return false;
         }
-        if (!BuildEffectiveConfig(s, out var eff, out var err))
+        // C（2026-10-22，DEC-205）：物化过程中要交代的话（覆盖层来源摘要 / 被忽略的点名）**先落日志再判成败** ——
+        // 覆盖层坏了只该"不生效 + 看得见"，不该让这次启动连一句解释都没有（方案 C2/C4）。
+        var matNotes = new List<string>();
+        bool matOk = BuildEffectiveConfig(s, out var eff, out var err, matNotes);
+        foreach (var n in matNotes) LogS(n);
+        if (!matOk)
         {
             error = err;
             _strataFailed = true;

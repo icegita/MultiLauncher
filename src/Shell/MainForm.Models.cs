@@ -43,7 +43,7 @@ public partial class MainForm
 
     // 运行配置、备份都放启动器 exe 同目录的 data\ 下：与 ini/log 同处，自包含、可整目录删掉重来，
     // 也不会往 Strata 项目里塞文件（exe 所在目录在更新时按 StrataLauncher\ 整目录保留）。
-    static string LauncherDataDir() => Path.Combine(AppContext.BaseDirectory, "data");
+    internal static string LauncherDataDir() => Path.Combine(AppContext.BaseDirectory, "data");
 
     // ---------------- DEC-116 + DEC-118：目录形状的两个"家" ----------------
     // `data\config\<模块>\` = 三模块**配置本体**的家；`data\backup\<模块>\` = 它们的**备份**家。
@@ -86,8 +86,34 @@ public partial class MainForm
     internal static string RealRunConfigDir() => ModuleConfigDir("strata");
     internal static string RunConfigDir() => _runConfigDirForTest ?? RealRunConfigDir();
 
-    // 物化出来的运行配置都在这（一个 tag 一份）——引擎实际读的就是这份（DEC-077 起也是「打开配置」的落点）
-    internal static string EffectiveConfigPath(string tag) => Path.Combine(RunConfigDir(), tag + ".json");
+    // 物化出来的运行配置都在这（一个 tag 一份）——引擎实际读的就是这份
+    // **2026-10-22 第二版（DEC-208，他拍）**：产物与引擎伴生文件**藏进 `run\` 子目录**，用户手改不到它们
+    //（改产物每次启动就重建、改伴生多半被界面盖）。顶层只剩 `strata_models.ini` 一份壳的参数（DEC-210）。
+    // 硬约束：两者**必须同目录** —— server.py:7086 拿 `--config` 的路径去扩展名 + `.shared-settings.json` 派生，
+    // 所以 `run\` 这一层是它们俩的同一个家，别只搬其中一个。
+    internal const string RunProductDirName = "run";
+    internal static string RunProductDir() => Path.Combine(RunConfigDir(), RunProductDirName);
+    internal static string EffectiveConfigPath(string tag) => Path.Combine(RunProductDir(), tag + ".json");
+    internal static string SharedSettingsPath(string tag) => Path.Combine(RunProductDir(), tag + ".shared-settings.json");
+
+    // A/C（2026-10-22，DEC-206/207/210）：每模型的「界面参数 + 手加参数」住**一份** `strata_models.ini`
+    // —— 一个模型一段，键名就是界面那 16 格（`Args1`/`Args2`… 是手加参数，见 ModelParamsIni）。
+    // 形状从 JSON 改成 ini 是他 2026-10-22 点名的第三版，由头很实在：**JSON 少个逗号整份读不动**，
+    // 而"文件坏了不写"的纪律会让保存一直失败；ini 一行一个键，改错只影响那一行。
+    // 文件名与另两个模块对齐（`llama_models.ini` / `ninfer_models.ini`）。
+    // 命名约束照旧：**不许以 `strata-` 开头**（回退/快照链按那个前缀认模板；这里是下划线，安全）、
+    // 不以 `-shared-settings` 结尾（引擎按产物名派生伴生文件，跟这份无关）。
+    internal const string ModelParamsFileName = "strata_models.ini";
+    internal static string ModelParamsPath() => Path.Combine(RunConfigDir(), ModelParamsFileName);
+
+    // DEC-207 那一版（`strata_models.json`，组 = `{ui, args}`）：只在迁移时认它，并进 ini 后原件挪去备份。
+    // 新代码不许再往这里写 —— 这个常量只给迁移与判据用。
+    internal const string LegacyModelParamsFileName = "strata_models.json";
+    internal static string LegacyModelParamsPath() => Path.Combine(RunConfigDir(), LegacyModelParamsFileName);
+
+    // 老形态（DEC-206 的 `<tag>.extra.json`，C 那一版的落点）：只在迁移时认它，认完并进该段的 `ArgsN`、
+    // 原件挪去备份。这个函数留着是给迁移与判据用的 —— 新代码不许再往这里写。
+    internal static string ExtraOverlayPath(string tag) => Path.Combine(RunConfigDir(), tag + ".extra.json");
 
     // ---------------- 版本显示 ----------------
 

@@ -185,7 +185,7 @@ public class Config
 {
     public Settings Current { get; set; } = new();
     // 预设（旧 [Preset:模块:名] 段）已拆（2026-10-04，DEC-073）：参数只有一份家底 —— [Current]（全局项）
-    // + [Model:<tag>]（每个 Strata 模型各一份）；旧 ini 里遗留的 [Preset:] 段解析时**识别并跳过**
+    // + 每个 Strata 模型各一段（DEC-206 起搬出本 ini，现在住 data\config\strata\strata_models.ini，DEC-210）；旧 ini 里遗留的 [Preset:] 段解析时**识别并跳过**
     // （不读进任何东西，防漏进 [Current]），随下一次保存自然消失。别再把预设加回来。
 
     // 每个 Strata 模型自己的参数快照（DEC-064）：键 = 模型 tag，值 = 只填了「模型家底」那批字段的 Settings。

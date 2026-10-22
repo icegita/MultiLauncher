@@ -94,16 +94,14 @@ public partial class MainForm
 
     // 整个 ini 的序列化 / 解析抽成静态：新增的 [Model:<tag>] 段要能被自检 round-trip 断言，
     // 而自检不开窗、也没有 MainForm 实例（同 DEC-037 把改名抽成 MigrateConfigName 的理由）。
-    // 2026-10-04（DEC-073）：预设已拆——段只剩 [Current] / [Model:<tag>] / [Window]。
-    internal static List<string> BuildConfigLines(Settings current,
-        Dictionary<string, Settings> snaps, WindowRect win)
+    // 2026-10-04（DEC-073）：预设已拆；DEC-206 起段只剩 [Current] / [Window]（每模型参数搬出本 ini）。
+    // A（2026-10-22，DEC-206 / DEC-210）：**`[Model:<tag>]` 段整套不再写出** —— 模型参数的家搬到
+    // `data\config\strata\strata_models.ini`（见 MainForm.ModelSnaps.cs）。于是 ini 里只剩 [Current] / [Window]，
+    // 而"老段下次保存成功后自动删"就是这一步的机械后果：整份 ini 是重写的，不写的段自然没了。
+    // 读侧照旧认老段（ParseConfigLines 一个字没改）—— 迁移要从旧值里取那一次。
+    internal static List<string> BuildConfigLines(Settings current, WindowRect win)
     {
         var lines = new List<string>(IniSection("Current", current));
-        foreach (var (tag, s) in snaps)
-        {
-            lines.Add("");
-            lines.AddRange(IniSection(Config.ModelSnapKey(tag), s, ModelOwnedKeys));
-        }
         lines.Add("");
         lines.Add("[Window]");
         lines.Add($"X={win.X}");
@@ -268,26 +266,53 @@ public partial class MainForm
     };
 
     // DEC-092：这个函数现在**必须**写明这次落盘算不算"提交界面参数"（没有默认值 = 每个调用点都得表态）。
-    //   commitParams=true  → 只有主窗「保存」与关窗选「写进去」：收一遍界面、写 [Current] + 该模型的 [Model:] 快照。
+    //   commitParams=true  → 只有主窗「保存」与关窗选「写进去」：收一遍界面、写 [Current] + 该模型那一段（DEC-210）。
     //   commitParams=false → 顺手落盘（更新链记跳过位 / 内部端口避让 / 切模块开关 / 关窗记窗口位置…）：
     //                         表里那些"参数格"一律按 _savedParams（上次提交的值）写，未保存的改动搭不上这条路。
     // DEC-137（D-3）：这个函数现在**返回"这次到底落盘了没有"**，并且改成"同目录写 tmp → 改名替换"的原子写法。
-    //   两条理由：① DEC-126 之后 `[Model:<tag>]` 是唤醒取参的唯一事实源，写失败却让「保存」报"界面参数已保存"
+    //   两条理由：① DEC-126 之后那一份记录（DEC-206/210 起住 `strata_models.ini`）是唤醒取参的唯一事实源，写失败却让「保存」报"界面参数已保存"
     //           = 他以为远端已经用上新参数（口径同 AGENTS 给 llama 段写的那条"写段失败别 MarkParamsSaved"）；
     //   ② `File.WriteAllLines` 是截断后顺序写，写到一半断电 / 被杀就只剩半份 ini，而 data\backup 三格里
     //           没有壳自己 ini 的任何备份 —— 它现在是家底，不能是整机唯一一份不做原子替换的落盘。
+    /// <summary>「保存」这一趟要不要动**模型参数文件**（`strata_models.ini`）—— 2026-10-23 审查 A 条立的唯一判据。
+    /// 只有提交那一趟写：`commitParams=false` 的落盘（关窗记位置 / 设置页保存 / 切模块 / 端口避让…）内存字典
+    /// 一个字都没变，写了只会把他手改的那份盖回旧值。抽成函数是为了这条语义能被自检钉住（不许改回"每次都写"）。</summary>
+    internal static bool SaveWritesModelStore(bool commitParams) => commitParams;
+
     bool SaveConfig(bool commitParams)
     {
         try
         {
             if (commitParams) _config.Current = CollectSettings();
             var cur = _config.Current;
-            // 模型家底快照只在**提交**时写（DEC-064 的口径：换模型只是看，没点保存不该把这套值记成"你要的"）
-            if (commitParams && cur.Model.Length > 0) _config.ModelSnaps[cur.Model] = SnapshotModelFields(cur);
-            if (commitParams) CommitSavedParams();
+            // 2026-10-23（审查 A 条）：模型参数那份文件**只在「提交」那一趟写**。
+            //   commitParams=false 这一趟（关窗记窗口位置 / 设置页点保存 / 切模块开关 / 端口避让 / 更新链记跳过位）
+            //   内存里的 `ModelSnaps` 一个字都不会变 —— 写盘没有意义，却正好把他**此刻手改的** `strata_models.ini`
+            //   盖回内存那份旧值（16 格回退、注释与 ArgsN 保住，事后看不出发生过什么）。
+            //   所以门槛提到这里，写盘只发生在真有话要说的时候；写之前先把文件里被别人改过的读进来。
+            if (SaveWritesModelStore(commitParams))
+            {
+                // 先重读：**别的模型以文件为准**（当前模型那一格紧接着由界面值覆盖 ——
+                // 「保存」的意思就是"界面这份我要"，这是 DEC-064 那条口径，没变）。
+                var reloadNotes = new List<string>();
+                ReloadModelSnapsIfChanged(_config.ModelSnaps, reloadNotes, out _);
+                foreach (var n in reloadNotes) Log(n);
+                // 模型家底快照只在**提交**时写（DEC-064 的口径：换模型只是看，没点保存不该把这套值记成"你要的"）
+                if (cur.Model.Length > 0) _config.ModelSnaps[cur.Model] = SnapshotModelFields(cur);
+                CommitSavedParams();
+                // A（2026-10-22，DEC-206 / DEC-210）：只改各段那 16 格对应的行（注释 / ArgsN / 自建键一行不动）。
+                // **这一步失败就不动 ini** —— 老 `[Model:*]` 段此刻还在 ini 里（写侧已不再写它），
+                // 不写 ini = 那份退路原样留着（A1 ①②）。
+                // 成功这一趟**不写日志**：保存是日常动作，参数落哪儿在设置页/说明书里说一次就够（口径同 DEC-092 的 llama 侧）。
+                if (!SaveModelSnapStore(_config.ModelSnaps, out _, out var snapsErr))
+                {
+                    Log("模型参数没搬进文件，这次保存没动 ini（老 [Model:*] 段留着当退路）：" + snapsErr);
+                    return false;
+                }
+            }
             var disk = commitParams ? cur : ForDisk(cur);
             var b = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
-            var lines = BuildConfigLines(disk, _config.ModelSnaps,
+            var lines = BuildConfigLines(disk,
                 new WindowRect(b.X, b.Y, b.Width, b.Height, WindowState == FormWindowState.Maximized));
             var tmp = ConfigPath + ".tmp";
             File.WriteAllLines(tmp, lines, new UTF8Encoding(false));

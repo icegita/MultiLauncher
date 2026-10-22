@@ -40,10 +40,17 @@ internal static partial class SelfTest
         // 它贡献的三十几条 = 第二个家，而这条判据要防的恰恰是"整块静默没跑"。
         // 提升成字段后的赋值点（本体一字未改，见 SelfTest.State.cs 的同名注释）
         W = s => sb.AppendLine(s);
+        // 2026-10-22（他问"自检为什么这么慢"）：每条判据之间隔了多久 —— 超过 1.5 秒就打一行 SLOW 点名。
+        // 为什么不是给每条都打时间：正常报告要能扫读，只有"慢得异常"的那些才值得占一行。
+        var swCheck = System.Diagnostics.Stopwatch.StartNew();
+        long lastCheckMs = 0;
         Check = (name, ok, detail) =>
         {
             if (!ok) failures++;
             W((ok ? "PASS  " : "FAIL  ") + name + (detail.Length > 0 ? "  | " + detail : ""));
+            var now = swCheck.ElapsedMilliseconds;
+            if (now - lastCheckMs >= 1500) W($"SLOW  这一条花了 {now - lastCheckMs}ms：{name}");
+            lastCheckMs = now;
         };
 
         // DEC-094 ⓪（第 0 轮排在最前面的那条欠账）：自检里的物化用例以前**直接写真实 data\run\** ——
@@ -183,18 +190,32 @@ internal static partial class SelfTest
             }
             W("测试用模型: " + target.Tag);
 
-            ScanAndSizes();
-            MaterializeAndKnobs();
+            // 2026-10-22（他问"自检为什么这么慢、能不能优化"）：每段各记一次耗时，报告末尾打一张表。
+            // 没有这张表就只能靠猜 —— 而这一族最忌猜（以前的"慢"其实一直是网络那两条在等超时）。
+            var swAll = System.Diagnostics.Stopwatch.StartNew();
+            var timings = new List<string>();
+            void Seg(string name, Action act)
+            {
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                act();
+                timings.Add(name + " " + sw.ElapsedMilliseconds + "ms");
+            }
 
-            UiLayoutChecks();
+            Seg("扫描与估算", ScanAndSizes);
+            Seg("物化与旋钮", MaterializeAndKnobs);
+            Seg("模型参数文件", ModelSnapFileChecks);   // A（DEC-206/210）：[Model:*] 那一族的家搬到 strata_models.ini 之后的迁移、往返、命名
 
-            AppUpdateChecks();      // DEC-202：第 4 条链（本程序自更新）那一族 —— 纯函数喂样本，一次都不联网
+            Seg("界面布局", UiLayoutChecks);
 
-            VersionAndUpdateChecks();
+            Seg("本程序更新", AppUpdateChecks);      // DEC-202：第 4 条链（本程序自更新）那一族 —— 纯函数喂样本，一次都不联网
 
-            NinferChecks();
+            Seg("版本与引擎更新", VersionAndUpdateChecks);
 
-            GatewayAndLlamaBackendChecks();
+            Seg("Ninfer", NinferChecks);
+
+            Seg("网关与 llama", GatewayAndLlamaBackendChecks);
+
+            W("各段耗时: " + string.Join("｜", timings) + "｜总计 " + swAll.ElapsedMilliseconds + "ms");
         }
         catch (Exception ex)
         {

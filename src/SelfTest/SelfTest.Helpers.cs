@@ -220,16 +220,19 @@ internal static partial class SelfTest
         catch { return "(读不动)"; }
     }
 
+    // DEC-208（2026-10-22）：产物搬进 `data\config\strata\run\` 之后，这条快照**必须递归** ——
+    // 否则子目录里的产物不进快照，⓪ 那条"没动真实产物"的护栏就成了看不见子目录的假绿（本仓最忌）。
+    // 键 = 相对路径（不再是文件名），两层目录才不会撞名。
     static Dictionary<string, string> SnapshotRunDir(string dir)
     {
         var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         try
         {
             if (!Directory.Exists(dir)) return d;
-            foreach (var f in Directory.GetFiles(dir))
+            foreach (var f in Directory.GetFiles(dir, "*", SearchOption.AllDirectories))
             {
                 using var fs = File.OpenRead(f);
-                d[Path.GetFileName(f)] = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(fs));
+                d[Path.GetRelativePath(dir, f)] = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(fs));
             }
         }
         catch { /* 读不到就当空：这条断言的判据是"没被动过"，宁可两侧都空也别把自检弄炸 */ }
@@ -305,7 +308,58 @@ internal static partial class SelfTest
     //   托盘三态 / 闸门先于联网 / 每进程一次与 30 秒防连点 / helper 脚本齐全 / helper 不许用 timeout。
     //   红侧（第 4 批同一刀）：把 helper 的 `ping` 改回 `timeout`、把 `AppProbeGate` 的 30 秒判断去掉 →
     //   恰好这两条 FAIL 并点名，其余全绿；`restore check` 后复跑 ALL PASS。
-    internal const int ChecksFloor = 1065;   // 基线 = **1,114** 条（1,096 + DEC-202 的 18 条），地板 = 1,114 − 49 = 1,065。**已发版 0.1.8.3**（2026-10-20 他点名走一次发版；本批不加判据，只换版本号与说明书那一行）
+    // C 批第 1 批（2026-10-22，方案「Strata 参数拆分 + 手加键覆盖层」的 C / 判据 1~3）：基线 = 1,124 条（1,114 + 10），地板 = 1,124 − 49 = 1,075
+    //   10 条 = 合并纯函数四面（新 flag 追加 / 同名原位替换 / 裸值追加并告警 / 模板自带重复收成一条）
+    //          + 壳接管两面（值型 --spec 丢弃并点名、布尔 --vision 同样丢弃）
+    //          + 覆盖层读取四面（文件不在 = 静默 / 坏 JSON / 顶层与 args 元素类型不对 / 只认 args 且点名其余顶层键）。
+    //   红侧真跑过两趟（shots-m1/st-c-red1.txt、st-c-red2.txt）：去掉"模板重复收成一条"→ **恰好** 判据1d 红；
+    //   去掉"壳接管丢弃"→ **恰好** 判据2a/2b 红；各自 restore 后复跑 ALL PASS（见 st-c-batch1.txt）。
+    // C 批第 2 批（2026-10-22，接入物化 + 来源摘要，判据 4~5）：基线 = 1,132 条（1,124 + 8），地板 = 1,132 − 49 = 1,083
+    //   8 条 = 端到端五面（新 flag 进产物 / 壳接管键仍是界面值 / 模板自带参数不被挤掉 / 覆盖层写坏不阻断启动 /
+    //          本机真模板 29 参数那一趟同验）
+    //          + 日志三面（来源摘要报清几条与文件名 / 被忽略的 flag 点名 / 那批话真被启动那一趟逐条 LogS）。
+    //   红侧两趟（shots-m1/st-c-red3.txt、st-c-red4.txt）：拆掉 `LogS(n)` → **恰好** 判据5c 红（hits=0）；
+    //   让物化绕开合并结果 → **恰好** 判据4a 红（产物里没有 --fake-flag）。restore 后复跑见 st-c-batch2.txt。
+    // A 批（2026-10-22，方案 §8 第 3、4 批：ModelSnaps 持久化换家 + 迁移 + 备份链 + 「打开配置」语义）：
+    //   基线 = 1,143 条（1,132 + 11），地板 = 1,143 − 49 = 1,094
+    //   11 条 = 命名约束一条（<tag>.ui.json / <tag>.extra.json 不被 Preserve 认成模板）
+    //          + 迁移五条（搬到文件 / 内容等价 / ini 一字未动 / 幂等 / 文件赢）
+    //          + 往返四条（16 格存读一致 / 内容没变不刷盘 / 写前备份 / 备份留 3 份）
+    //          + 「打开配置」改成目录后新加的一条（设置页「通用 → 位置」有配置文件那一行）。
+    //   另有两处判据**跟改**（A5，不许删断言）：ini 那一组里"每个模型一段"改成正向的反面（写侧不再写 [Model:*]），
+    //   "记录那一段写全 16 格"改喂 ModelSnapJson；`ValueInIniForTest` 见 "Model:<tag>" 时转读 <tag>.ui.json
+    //   —— 于是 DEC-092/122 那十几条"保存才落盘"的判据仍打在真正的落点上。
+    //   红侧一趟（shots-m1/st-a-red.txt）：把 LoadModelSnapFiles 的"文件赢"去掉 → **恰好** 判据7e/8a 红（同一处根因的两个面）。
+    // DEC-207（2026-10-22 第二版：壳侧参数合并成一份 `strata_models.json`，`ui` 块 + `args` 块）：基线 = 1,147 条（1,143 + 4），地板 = 1,147 − 49 = 1,098
+    //   4 条 = 老形态 `<tag>.ui.json` 并进来（判据7f）+ 老手加键文件并进 args 块（7g）
+    //          + 壳只改 ui 块、不冲掉你写的 args/备注（8e）+ 文件坏了不写、原文件一个字节不动（8f）。
+    //   红侧一趟（shots-m1/st-merge-red.txt）：把"只改 ui 块"改成"整组重建" → **恰好** 判据8e 红。
+    // DEC-208（2026-10-22 第三版：产物与伴生文件藏进 `run\` 子目录，顶层只剩壳的 strata_models.json）：基线 = 1,149 条（1,147 + 2），地板 = 1,149 − 49 = 1,100
+    //   2 条 = run\\ 搬家两面（普通产物搬进去、壳自己的文件不搬；两边都有都不动并点名）。
+    //   另有两处判据**跟改**：自检的 `SnapshotRunDir` 改**递归**（不递归 = run\ 里的产物不进 ⓪ 快照 = 假绿，本仓最忌）、
+    //   「打开配置」说明的断言改点名 run\\ 与 strata_models.json。红侧一趟（shots-m1/st-run-red.txt）：
+    //   把"壳自己的文件不搬"摘掉 → **恰好** 判据7h 红（日志里看见 strata_models.json 被搬）。
+    // DEC-209（2026-10-22 第四版：逐模型补齐 —— 已有记录之后新加的模型从各自模板补一份，ArenaPinGib 留空）：
+    //   基线 = 1,152 条（1,149 + 3：已有记录时仍能补 / 取模板值且 arena 留空 / 幂等），地板 = 1,152 − 49 = 1,103。
+    //   红侧一趟（shots-m1/st-fill-red.txt）：把 `snaps.ContainsKey(tag)` 摘掉 → **恰好** 判据9a/9b/9c 三条红
+    //   （已有记录被模板盖掉、ArenaPinGib 没留空的对照也跟着变），restore 后复跑 ALL PASS。
+    // DEC-210（2026-10-22 第五版：`strata_models.json` 换成 `strata_models.ini`，一个模型一段、`Args1..ArgsN` 一行一个）：
+    //   基线 = 1,153 条（1,152 + 1：「DEC-207 的 json 并进 ini」那条 7i），地板 = 1,153 − 49 = 1,104。
+    //   换格式是跟改一半判据、一半实现：7a/7b/7e/7g/8e/8f 与 `ValueInIniForTest` 都改读 ini 段，
+    //   4d 从"坏 JSON 不阻断"改成"段头坏掉不阻断"，条数不变；只有 7i 是新增。
+    // DEC-211（2026-10-22 第六版：「打开配置」直接开 ini、通用页「路径」置顶两行、拉起服务前重读被手改的 ini）：
+    //   基线 = 1,158 条（1,153 + 3 个入口/重读 + DEC-212 的 2 条），地板 = 1,158 − 49 = 1,109。
+    //   **订正（2026-10-23）**：这一条当时记的 1,158 与实际不符 —— 本轮开工实测是 **1,156**（那 3 条里有一条没落地）。
+    //   下面第 71 轮那两刀加完正好 1,158，这条账就此对上；地板仍按 1,158 − 49 = 1,109，没动。
+    // 第 71 轮（2026-10-23 只读审查 A / D 条整改，DEC-214）：
+    //   基线 = 1,158 条（1,156 + 2），地板 = 1,158 − 49 = 1,109（不变）。
+    //   2 条 = 12a（模型参数文件只在「提交」那一趟写：commitParams=false 不写，否则关窗 / 设置页保存会把手改的 ini
+    //          盖回内存那份旧值）+ 12b（手删掉一整段 → 重读后内存里那条跟着消失，下一次落盘不会把它写回来）。
+    //   红侧两趟（`shots-m1/st-r71-red1.txt` / `st-r71-red2.txt`）：
+    //     ① `SaveWritesModelStore` 恒 true → 12a 红，**并连带**两条 DEC-092「非提交式落盘」红 —— 同一根因
+    //        （非提交那一趟又走回"记快照 + 写盘"，界面没保存的值被记成"你要的"），不是三条独立缺陷；
+    //     ② 把回收删除那刀摘掉 → **恰好** 12b 红（`gone=False 复活=True`）。恢复后复跑 ALL PASS。
+    internal const int ChecksFloor = 1109;   // 基线 = **1,158** 条（实测），地板 = 1,158 − 49 = 1,109
 
     // DEC-164（BUG-068 第二条残留：开机自启的 HKCU Run 键也按进程收口）那批：基线 = 1,011 条（1,009 + 2），地板 = 962
     // DEC-163（八类引擎台账改「去重照记」+ 「写全量」开关整套退役）那一批**净条数不变** = 基线仍 1,009、地板仍 960（组成变了，见 DEC-163）

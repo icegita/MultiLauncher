@@ -277,6 +277,29 @@ public partial class MainForm
         // 规矩照 DEC-084：Move 不是复制、两边都有不覆盖并点名、建不出来就什么都不动。
         foreach (var note in MigrateLauncherLayout(_config.Current.Root))
             Log("布局搬家：" + note, "launcher");          // 跨模块的家事 → 走 launcher 通道（三页都显示，正是想要的）
+        // A/C（2026-10-22，DEC-206 / DEC-207）：`[Model:<tag>]` 那一族的家搬到
+        // `data\config\strata\strata_models.ini`（一个模型一段：16 格 = 界面参数、`ArgsN` = 手加参数，DEC-210）。
+        // **次序是硬要求**：必须在下面任何一次 SaveConfig 之前 —— 写侧从此不再写 `[Model:*]` 段，
+        // 先存一次就把老段抹了（= 迁移还没跑、数据先没了）。放在布局搬家之后：那时 RunConfigDir 才是最终位置。
+        // 自检/探针里一律不跑（与布局搬家同一道按进程闸）：搬家类真路径不许被一次 --selftest 碰，
+        // 判据走 data\tmp 里的副本（见 SelfTest 的 ModelSnapFileChecks）。
+        if (!LayoutMigrationDisabledForTest)
+        {
+            var snapNotes = new List<string>();
+            var (fromIni, fromFiles, fromLegacy) = ReconcileModelSnaps(_config.ModelSnaps, snapNotes);
+            foreach (var n in snapNotes) LogS(n);
+            if (fromIni > 0)
+                LogS($"已把 {fromIni} 份模型参数从 MultiLauncher.ini 搬到 " + DisplayDataPath(RealRunConfigDir())
+                     + "\\" + ModelParamsFileName + "（老 [Model:*] 段这次保存后不再写；文件赢、老段只在文件不存在时读一次）");
+            else if (fromFiles > 0)
+                LogS("模型参数从 " + DisplayDataPath(RealRunConfigDir()) + "\\" + ModelParamsFileName + " 读入（" + fromFiles + " 个模型）");
+            if (fromLegacy > 0)
+                LogS($"已把 {fromLegacy} 份旧的每模型一份配置并进 " + ModelParamsFileName
+                     + "（旧文件已存进 " + DisplayDataPath(ModelUiBackupDir()) + "）");
+            // DEC-208：产物 + 引擎伴生文件**藏进 run\ 子目录**（用户手改不到它们；两者必须同目录，
+            // server.py:7086 按 --config 的路径派生伴生文件）。一次性搬，两边都有就不覆盖并点名。
+            foreach (var note in MigrateProductsIntoRunDir()) LogS(note);
+        }
         // DEC-124：整份快照归位到 D:\Strata-data\backup\ 那一跳是**复制、不删老那份**（他的原话：旧的位置不要删除，
         // 留着我自己删，并要提醒我）。所以这条提醒每启动写一次，直到他自己把老位置清空为止；空壳不算（判据 = LegacySnapshotsPending）。
         // 真正干活的那一趟在窗开起来之后的后台（几百 MB 到 1 GB 的复制，别挡开窗）。
@@ -332,10 +355,23 @@ public partial class MainForm
         // DEC-064 一次性迁移：老 ini 把所有模型共用的一份扁平家底记在 [Current] 里（换模型时只有 tag 落盘、
         // 参数只进界面），所以先按各模型「此刻真正生效的那份」= data\config\strata\<tag>.json 各建一份快照；
         // 从没启动过的模型没有这份文件，就回落到它的配置模板。之后快照由每次「保存」维护。
-        int seeded = SeedModelSnapsFromRunConfigs(_config.Current, _config.ModelSnaps, _models.Select(m => m.Tag), RunConfigDir());
+        int seeded = SeedModelSnapsFromRunConfigs(_config.Current, _config.ModelSnaps, _models.Select(m => m.Tag), RunProductDir());
         if (seeded > 0)
             LogS($"已为 {seeded} 个 Strata 模型各建一份参数快照（取自 " + DisplayDataPath(RealRunConfigDir())
                  + " 里该模型此刻生效的运行配置，之后每次「保存」跟着维护）");
+        // DEC-209（2026-10-22，他点名「按 2 改」）：**逐模型补齐**。上面那条是 DEC-064 的一次性迁移 ——
+        // 只在字典完全为空时跑一次，于是"已有记录"之后新加的模型永远补不上（他报的「5 个模型只有 3 份配置」）。
+        // 这条从各自的**配置模板**补（不是从产物：产物是壳自己的输出，反推 = 自洽循环），缺哪个补哪个，
+        // ArenaPinGib 留空（模板里那个数分不清来源，抄进去就把"沿用模板"变成钉死）。
+        var filledTags = new List<string>();
+        if (FillMissingModelSnapsFromTemplates(_config.ModelSnaps, _models.Select(m => m.Tag),
+                _config.Current.Root, filledTags) > 0)
+        {
+            if (SaveModelSnapStore(_config.ModelSnaps, out _, out var fillErr))
+                LogS($"已为 {filledTags.Count} 个新模型各建一份参数记录（取自各自的配置模板）：{string.Join("、", filledTags)}");
+            else
+                LogS($"新模型的参数记录没写进 {ModelParamsFileName}（这次只在内存里，下次保存再试）：{fillErr}");
+        }
         RefreshVersions();
         WarnPortClash();        // 存量 ini 里若已有"公开端口=内部端口"的串台值，开机就在日志里说一句
         // 启动时按选中的模型把家底校正一遍（DEC-064：原来只在首次运行做，于是「下拉是 A 模型、上方模型名是

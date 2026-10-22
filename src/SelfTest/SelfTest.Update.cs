@@ -151,9 +151,14 @@ internal static partial class SelfTest
                 noDigest.Sha256 + " / " + noDigest.Size);
             var llamaApi = MainForm.LlamaReleasesApi(new Settings().LlamaUpdateUrl);
             var llamaTmp = MainForm.Scratch("llama-selftest-releases.json");
+            // 2026-10-22（他问"自检为什么这么久"）：这一条以前走 `Net.Download` —— 那是给更新链下载几百 MB 包用的
+            // （HttpClient 超时 180 秒），网络一掐就白等两分钟（实测这一段独占 124 秒）。自检只要一份列表，
+            // 改用**自检专用**的短超时抓取（10 秒）；取不到就标 SKIP，**不算红** —— 网络是环境，不是本程序的行为
+            // （BUG-052 同族：用户机器上恰好有什么，不该决定用例红绿）。
             string lerr;
-            bool llamaNetOk = Net.Download(llamaApi, llamaTmp, python, out lerr);
-            Check("④ 能取到 llama.cpp 的发布列表", llamaNetOk, lerr);
+            bool llamaNetOk = FetchForSelfTest(llamaApi, llamaTmp, 10, out lerr);
+            if (llamaNetOk) Check("④ 能取到 llama.cpp 的发布列表", true);
+            else W("SKIP  ④ 取不到 llama.cpp 的发布列表（网络不通，按跳过：这条不判红）  | " + lerr);
             if (llamaNetOk)
             {
                 var suffix = MainForm.LlamaAssetSuffix(new Settings().LlamaDir);
@@ -241,16 +246,17 @@ internal static partial class SelfTest
                     snap.ApiModel == "A-name" && snap.Port == new Settings().Port && snap.Host == new Settings().Host);
             }
             {
-                // ini round-trip：[Model:<tag>] 段存得回、读得回；段里混进的非家底键不污染快照
+                // ini round-trip：[Current] 与窗口位置存得回、读得回；混进的非家底键不污染快照。
+                // A（2026-10-22，DEC-206/210）：**模型参数不再落本 ini** —— 这一族搬到
+                // `data\config\strata\strata_models.ini`，写/读/迁移的判据在 ModelSnapFileChecks（判据 6~8）里。
+                // 这里保留的是它原本的另一半：「ini 结构没坏」，加上一条新的反向判据：
+                // **写侧不再写 [Model:*] 段**（老段随下一次保存自然消失）。
                 var cur = new Settings { Model = "iq3_s", Port = "8081", ApiModel = "flat-name", LlamaExtraArgs = "--flash-attn on" };
-                var snaps = new Dictionary<string, Settings>(StringComparer.OrdinalIgnoreCase)
-                {
-                    ["iq3_s"] = MainForm.SnapshotModelFields(new Settings { ApiModel = "qwen-iq3", Context = "262144", ReasoningEffort = "low" }),
-                    ["swift"] = MainForm.SnapshotModelFields(new Settings { ApiModel = "swift-1.5", Context = "131072" }),
-                };
-                var lines = MainForm.BuildConfigLines(cur, snaps, new MainForm.WindowRect(10, 20, 300, 400, false));
-                Check("ini 里每个模型一段 [Model:<tag>]",
-                    lines.Contains("[Model:iq3_s]") && lines.Contains("[Model:swift]"), string.Join("|", lines.Take(3)));
+                var lines = MainForm.BuildConfigLines(cur, new MainForm.WindowRect(10, 20, 300, 400, false));
+                Check("A：ini 里不再写 [Model:<tag>] 段（家已搬到 strata_models.ini；老段随下一次保存自然消失）",
+                    !lines.Any(l => l.StartsWith("[Model:", StringComparison.Ordinal))
+                    && lines.Contains("[Current]") && lines.Contains("[Window]"),
+                    string.Join("|", lines.Where(l => l.StartsWith('[')).Take(4)));
                 var cur2 = new Settings();
                 var snaps2 = new Dictionary<string, Settings>(StringComparer.OrdinalIgnoreCase);
                 var res2 = new MainForm.ConfigParseResult();
@@ -263,6 +269,9 @@ internal static partial class SelfTest
                 withLegacy.Insert(withLegacy.IndexOf("[Current]") + 1, "EngineFull" + "Ledger=True");
                 MainForm.ParseConfigLines(withLegacy.Concat(new[]
                     {
+                        // A（DEC-206）：写侧已经不写 [Model:*] 段，所以这一段**手工当家**（= 老 ini 的样子）——
+                        // 读侧照旧认它，正是迁移要吃掉的那一份（判据 7 才验"搬到文件"）。
+                        "[Model:iq3_s]", "ApiModel=qwen-iq3", "Context=262144", "ReasoningEffort=low",
                         "[Model:swift]", "Port=7777", "ApiModel=swift-1.5",
                         "[Preset:老预设]", "Port=9090", "LlamaTemperature=9.9",
                     }),
@@ -294,10 +303,6 @@ internal static partial class SelfTest
                     ExtraArgs = "--foo", ReasoningEffort = "low", Port = "8081",
                 };
                 var dupLines = MainForm.BuildConfigLines(dup,
-                    new Dictionary<string, Settings>(StringComparer.OrdinalIgnoreCase)
-                    {
-                        ["iq3_s"] = MainForm.SnapshotModelFields(dup),
-                    },
                     new MainForm.WindowRect(10, 20, 300, 400, false));
                 var curPart = dupLines.Skip(dupLines.IndexOf("[Current]") + 1).TakeWhile(l => !l.Trim().StartsWith("["));
                 Check("DEC-122③ 写侧跳过：这 16 行不再出现在 [Current]（Port= / Model= 这类不跟模型走的照旧在）",
@@ -306,13 +311,16 @@ internal static partial class SelfTest
                     && !curPart.Any(l => l.StartsWith("ReasoningEffort=")) && !curPart.Any(l => l.StartsWith("Vision="))
                     && curPart.Any(l => l == "Port=8081") && curPart.Any(l => l == "Model=iq3_s"),
                     string.Join(" ⏎ ", curPart.Where(l => l.StartsWith("C") || l.StartsWith("K") || l.StartsWith("V"))));
-                var snapPart = dupLines.Skip(dupLines.IndexOf("[Model:iq3_s]") + 1).TakeWhile(l => !l.Trim().StartsWith("["));
-                Check("DEC-122③ 记录那一段照旧写全这 16 格（值由记录承接 = 用户无感；服务级字段仍不进这一段）",
-                    snapPart.Any(l => l == "Context=262144") && snapPart.Any(l => l == "Kv=q4_0")
-                    && snapPart.Any(l => l == "ExtraArgs=--foo") && snapPart.Any(l => l == "ReasoningEffort=low")
-                    && snapPart.Any(l => l == "KvResident=True")
-                    && !snapPart.Any(l => l.StartsWith("Port=")) && !snapPart.Any(l => l.StartsWith("Model=")),
-                    string.Join(" ⏎ ", snapPart));
+                // A（2026-10-22，DEC-206/210）：这一段原来是"记录那一段照旧写全这 16 格"（读 ini 的 [Model:iq3_s]）。
+                // 家搬走之后，同一条意图在这里改喂**快照本身的序列化**（ModelSnapJson 与写进 ini 那 16 个键同源）——
+                // 16 格必须写全、服务级字段一个都不许进。
+                var snapJson = MainForm.ModelSnapJson(MainForm.SnapshotModelFields(dup));
+                Check("A：这 16 格照旧写全（落点是 strata_models.ini 该段；服务级字段仍不进这一份）",
+                    snapJson.Contains("\"Context\": \"262144\"") && snapJson.Contains("\"Kv\": \"q4_0\"")
+                    && snapJson.Contains("\"ExtraArgs\": \"--foo\"") && snapJson.Contains("\"ReasoningEffort\": \"low\"")
+                    && snapJson.Contains("\"KvResident\": true")
+                    && !snapJson.Contains("\"Port\"") && !snapJson.Contains("\"Model\""),
+                    snapJson.Replace("\r\n", " ").Replace("\n", " "));
                 var oldDup = new Settings();
                 MainForm.ParseConfigLines(new[]
                 {
@@ -377,7 +385,7 @@ internal static partial class SelfTest
                 Check("DEC-157 新旧同场：新键为准（旧键不接管）",
                     gm2.GpuMutex == "queue", $"'{gm2.GpuMutex}'");
                 var gmLines = MainForm.BuildConfigLines(new Settings { GpuMutex = "reject", GpuWakeWaitSec = "420" },
-                    new Dictionary<string, Settings>(), new MainForm.WindowRect(0, 0, 800, 600, false));
+                    new MainForm.WindowRect(0, 0, 800, 600, false));
                 Check("DEC-157 写侧只写新键（旧键随下一次保存自然消失）",
                     gmLines.Contains("GpuMutex=reject") && gmLines.Contains("GpuWakeWaitSec=420")
                     && !gmLines.Any(l => l.StartsWith("NinferGpuMutex", StringComparison.Ordinal))
@@ -650,5 +658,23 @@ internal static partial class SelfTest
                         StackedToggle.WipeLiveForTest == liveStack, "live=" + StackedToggle.WipeLiveForTest + " base=" + liveStack);
                 }
             }
+    }
+
+    /// <summary>自检专用的短超时抓取（2026-10-22，他问"自检为什么这么久"）：只取一份 JSON 列表，10 秒拿不到就算了。
+    /// 与 <see cref="Net.Download"/> 的分工：那个给更新链下载几百 MB 的包用（超时 180 秒、失败退 python 重试），
+    /// 拿它跑自检 = 网络一掐就白等两分钟。这里不重试、不退 python —— 自检不需要为了"证明网络通"耗时间。</summary>
+    static bool FetchForSelfTest(string url, string dest, int timeoutSec, out string error)
+    {
+        error = "";
+        try
+        {
+            using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(timeoutSec) };
+            http.DefaultRequestHeaders.UserAgent.ParseAdd("MultiLauncher");
+            http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
+            var bytes = http.GetByteArrayAsync(url).GetAwaiter().GetResult();
+            File.WriteAllBytes(dest, bytes);
+            return true;
+        }
+        catch (Exception ex) { error = ex.GetType().Name + ": " + ex.Message; return false; }
     }
 }

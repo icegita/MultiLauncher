@@ -45,6 +45,12 @@ public partial class MainForm
     }
 
     internal static bool BuildEffectiveConfig(Settings s, out string effPath, out string error)
+        => BuildEffectiveConfig(s, out effPath, out error, null);
+
+    /// <summary>物化。<paramref name="notes"/> = C（2026-10-22，DEC-205）那一层要对人说的话（覆盖层来源摘要 +
+    /// 被忽略的点名）：传一份 List 进来就往里**追加**，由调用方逐行打进日志 —— 物化是纯静态的、不自己写日志，
+    /// 自检也才能拿同一批话做判据（方案 C2「三层排障要有为什么」/ C3「静默失效」）。传 null = 只物化、不收集。</summary>
+    internal static bool BuildEffectiveConfig(Settings s, out string effPath, out string error, List<string>? notes)
     {
         effPath = ""; error = "";
         if (s.Model.Length == 0) { error = "还没有选择模型。"; return false; }
@@ -91,10 +97,26 @@ public partial class MainForm
 
         // 引擎参数：丢掉壳要接管的那些（值和布尔两种），再按当前界面追加
         var src = (node["args"] as JsonArray)?.Select(x => x?.GetValue<string>() ?? "").ToList() ?? new List<string>();
-        var kept = new List<string>();
-        for (int i = 0; i < src.Count; i++)
+        // C（2026-10-22，DEC-205）：手加键插在"读模板"之后、"删壳接管 flag"之前（方案 §2.1）——
+        // 位置就是它的语义：先让用户那层把模板补齐，再让界面把壳接管的那批盖回去（界面唯一真相，C1）。
+        // 2026-10-22 第二版（DEC-207）：手加键不再是独立文件；第三版（DEC-210）起住
+        // `strata_models.ini` 该段的 `Args1..ArgsN`（一行一个 token）。
+        // 读不到 = 静默（规则③）；读坏了 = 按空 + 一条点名（规则②）；合并确实动了才写来源摘要（C2）。
+        var noteSink = notes ?? new List<string>();
+        var extraName = ModelParamsFileName + " 的 args 块（" + s.Model + "）";
+        var extraArgs = ReadExtraArgsForTag(s.Model, noteSink);
+        var effectiveSrc = src;
+        if (extraArgs.Count > 0)
         {
-            var a = src[i];
+            var mergeNotes = new List<string>();
+            effectiveSrc = MergeExtraArgs(src, extraArgs, extraName, mergeNotes, out var ignored);
+            noteSink.Add($"合并 {CountArgEntries(extraArgs)} 条手加键（其中 {ignored} 条被忽略）：{extraName}");
+            noteSink.AddRange(mergeNotes);
+        }
+        var kept = new List<string>();
+        for (int i = 0; i < effectiveSrc.Count; i++)
+        {
+            var a = effectiveSrc[i];
             if (BoolFlags.Contains(a)) continue;
             if (ValueFlags.Contains(a)) { i++; continue; }
             kept.Add(a);
@@ -106,6 +128,7 @@ public partial class MainForm
         kept.Add("--max-context"); kept.Add(ctx.ToString());
         // DEC-097④：上下文超过训练长度 → 自动补 rope（yarn + 因子），回到训练长度以内就把这两枚摘掉。
         // 界面上不该再多两格：这两枚从来不是独立旋钮，它是「上下文」这个数的机械后果（写坏 = 拿没扩展的角度跑 2 倍长度）。
+        // 训练长度照旧只从**模板**反推（`src`）：覆盖层插不进这两枚（都是壳接管的，写了也会被丢弃，方案 §5 坑 4）。
         var rope = RopeFor(TrainedContextOf(src), ctx);
         if (rope is not null)
         {
@@ -156,14 +179,15 @@ public partial class MainForm
 
         try
         {
-            var dir = RunConfigDir();
+            var dir = RunProductDir();     // DEC-208：产物与伴生文件住 data\config\strata\run\
             Directory.CreateDirectory(dir);
             effPath = EffectiveConfigPath(s.Model);
             File.WriteAllText(effPath, node.ToJsonString(new JsonSerializerOptions { WriteIndented = true }),
                 new System.Text.UTF8Encoding(false));
-            // 网页里的 Chat 设置存在 config 同名的 .shared-settings.json：第一次接过来，免得用户的偏好丢失
+            // 网页里的 Chat 设置存在 config 同名的 .shared-settings.json：第一次接过来，免得用户的偏好丢失。
+            // 位置必须与产物**同一个目录**（server.py:7086 按 --config 去扩展名派生），所以同用 RunProductDir()。
             var sharedSrc = Path.Combine(s.Root, "strata-" + s.Model + ".shared-settings.json");
-            var sharedDst = Path.Combine(dir, s.Model + ".shared-settings.json");
+            var sharedDst = SharedSettingsPath(s.Model);
             if (File.Exists(sharedSrc) && !File.Exists(sharedDst)) File.Copy(sharedSrc, sharedDst, false);
             // 思考深度（2026-10-04）：Strata 服务端的"默认思考档"就住在这个共享文件里（聊天页的 Thinking 是它，
             // 服务启动时读、请求没自带档位时套用）。非空 = 每次物化按这一格写入；留空 = 一个字都不碰。

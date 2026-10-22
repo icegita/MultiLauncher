@@ -80,7 +80,7 @@ public partial class MainForm
         Tip.Set(_txtHost, "127.0.0.1 = 仅本机；0.0.0.0 = 局域网可访问（此时 API 地址栏显示本机局域网 IP）");
         Tip.Set(_txtPort, "服务公开端口（1-65535）：路由模式下它是网关的监听端口；Strata 服务实际跑在设置页的内部端口上");
         Tip.Set(_txtPortLlama, "llama-server 的实际监听端口（1-65535），手填。留空 = 公开端口 + 2；与公开/Strata 内部端口撞车、或该端口还被网关/旧服务占着时会自动避让，日志里会写来源");
-        Tip.Set(_cboReasoning, "共享默认思考档（聊天页 Thinking 同款）：none / low / medium / high；留空 = 不写（聊天页里设的照旧）。填了 = 每次启动服务时按这里写入 " + DisplayDataPath(RealRunConfigDir()) + "\\<tag>.shared-settings.json");
+        Tip.Set(_cboReasoning, "共享默认思考档（聊天页 Thinking 同款）：none / low / medium / high；留空 = 不写（聊天页里设的照旧）。填了 = 每次启动服务时按这里写入 " + DisplayDataPath(RunProductDir()) + "\\<tag>.shared-settings.json");
         Tip.Set(_cboReasoningEffort, "选中模型那一段的 reasoning-effort（官方取值：default / minimal / low / medium / high / xhigh / max）；留空 = 从这一段删掉这个键 = 回落到 [*]/文件头（DEC-079 起没有合并 ini 这一层）");
 
         // 宽度按运行时实测给，别写死（125%/150% 下 CJK 字宽非整倍增长）

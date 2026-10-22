@@ -138,22 +138,21 @@ internal static partial class SelfTest
                 Check("界面里已没有 API 密钥 / 请求唤醒 / 配置新模型",
                     !rows.Any(x => x.Contains("API 密钥")) && !rows.Any(x => x.Contains("请求唤醒")) && !rows.Any(x => x.Contains("配置新模型")));
                 // 2026-10-04 DEC-077 定「打开配置 = 引擎实际读的那一份（当时是融合产物）」，DEC-079 改 llama 那一支，
-                // **DEC-122② 把 Strata 这一支改开 `MultiLauncher.ini`** —— 他要的是"保存写哪 / 打开看哪 / 唤醒读哪"三处对上。
-                // 产物（data\config\strata\<tag>.json）从此不设专用入口：设置页「模型配置目录」那枚「打开」直达目录。
+                // DEC-122② 把 Strata 那一支改开 `MultiLauncher.ini`；**2026-10-22 DEC-206 → DEC-211 再改两次：
+                // Strata = `data\config\strata\strata_models.ini` 这一份文件**（一个模型一段：界面那 16 格 +
+                // 手加的 ArgsN；产物在旁边的 run\ 里），壳自己的 ini 搬到设置页「通用 → 路径」。
                 var keepTag = uiForm.SelectedTagForTest;
                 var cfgA = uiForm.ActiveConfigTarget();
-                Check("打开配置(Strata) = MultiLauncher.ini 本身（DEC-122②：保存写哪 / 打开看哪 / 唤醒读哪 三处同一个家）",
-                    string.Equals(cfgA.Path, MainForm.ConfigPathForTest, StringComparison.OrdinalIgnoreCase)
-                    && Path.GetFileName(cfgA.Path) == MainForm.ConfigFileName
-                    && !cfgA.Path.StartsWith(MainForm.RunConfigDir() + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+                Check("打开配置(Strata) = strata_models.ini 这一份文件本身（DEC-211：不再开目录，与 llama / Ninfer 对齐）",
+                    string.Equals(cfgA.Path, MainForm.ModelParamsPath(), StringComparison.OrdinalIgnoreCase)
+                    && File.Exists(cfgA.Path)
+                    && !string.Equals(cfgA.Path, MainForm.ConfigPathForTest, StringComparison.OrdinalIgnoreCase)
                     && !cfgA.Path.StartsWith(root, StringComparison.OrdinalIgnoreCase),
                     $"{cfgA.Path}｜{cfgA.Note}");
-                Check("打开配置(Strata) 的说明改写：点名 [Model:<当前模型>] 那一段 + 模板在哪儿 + 手改要先退壳（DEC-122②）",
-                    cfgA.Note.Contains("[Model:" + keepTag + "]") && cfgA.Note.Contains("点「保存」写的就是这里")
-                    && cfgA.Note.Contains($"strata-{keepTag}.json") && cfgA.Note.Contains("壳只读不写")
-                    && cfgA.Note.Contains("请先退出外壳"), cfgA.Note);
-                Check("打开配置(Strata) 不再写那句「物化产物、在这上面改留不住」（落点换了，老说明跟着退役）",
-                    !cfgA.Note.Contains("留不住"), cfgA.Note);
+                Check("打开配置(Strata) 的说明只留一句「改完停止再启动就生效」（DEC-211 精简口径）",
+                    cfgA.Note.Contains("停止") && cfgA.Note.Contains("启动") && cfgA.Note.Contains("重读"), cfgA.Note);
+                Check("打开配置(Strata) 不再写那句「物化产物、在这上面改留不住」，也不再提 [Model:] 那一段（落点换了，老说明跟着退役）",
+                    !cfgA.Note.Contains("留不住") && !cfgA.Note.Contains("[Model:") && !cfgA.Note.Contains("run\\"), cfgA.Note);
                 // DEC-094 ⓪：自检期间 RunConfigDir 被改成 data\tmp\ 的副本（真实产物一份不写），
                 // 所以这句断的是**默认落点** —— 真件那条路一个字没动。
                 // DEC-118：默认落点从 exe 同目录的 data\run 归位成 data\config\strata（老目录由首启搬家带走）。
@@ -435,11 +434,11 @@ internal static partial class SelfTest
                 {
                     uiForm.SelectModelForTest(cfgOther.Tag);
                     var cfgB = uiForm.ActiveConfigTarget();
-                    // DEC-122②：文件不再跟着下拉换（一份 ini 装所有模型的记录），换的是**说明里点名那一段**
-                    Check("打开配置不随下拉换文件，但说明里那一段跟着换（DEC-122②：一份 ini、每个模型各看各的那一段）",
+                    // DEC-211：落点是一份文件（不随下拉换），说明也只有一句 —— 换模型时**路径与说明都不变**
+                    Check("打开配置不随下拉换（同一份 strata_models.ini、同一句说明；DEC-211）",
                         string.Equals(cfgB.Path, cfgA.Path, StringComparison.OrdinalIgnoreCase)
-                        && cfgB.Note.Contains("[Model:" + cfgOther.Tag + "]")
-                        && !cfgB.Note.Contains("[Model:" + keepTag + "]"), $"{cfgA.Path} -> {cfgB.Path}");
+                        && string.Equals(cfgB.Note, cfgA.Note, StringComparison.Ordinal),
+                        $"{cfgA.Path} -> {cfgB.Path}｜{cfgA.Note} / {cfgB.Note}");
                     // 用户 2026-10-04 第 2 条（两侧一起，他补的"要一起删的"）：换模型不再往日志里抄一遍参数
                     // ——「已按模型 X 的 strata-<tag>.json / llama_models.ini [X] 段载入参数（…）」两行都退役，
                     // 落点就是卡2 / 高级区那些格子本身的值在变。这条断言防止以后有人把同义反复加回来。
@@ -466,9 +465,12 @@ internal static partial class SelfTest
                 var cfgBad = ModuleRegistry.All.Where(m =>
                 {
                     var t = uiForm.View(m.Key).ConfigTarget();
-                    return t.Path.Length > 0 ? !File.Exists(t.Path) : t.Note.Length == 0;
+                    // DEC-206：Strata 那一支给的是**目录**（一层里三份文件），llama / Ninfer 仍是文件 —— 两种都算"在场"
+                    return t.Path.Length > 0
+                        ? !(File.Exists(t.Path) || Directory.Exists(t.Path))
+                        : t.Note.Length == 0;
                 }).Select(m => m.Key).ToList();
-                Check("DEC-122②「打开配置」的判据只有 ConfigTarget 一家：三模块每一支要么路径在场、要么有话可说（按表穷举）",
+                Check("DEC-122②/204「打开配置」的判据只有 ConfigTarget 一家：三模块每一支要么路径在场（文件或目录）、要么有话可说（按表穷举）",
                     cfgBad.Count == 0, "不对的：" + string.Join("、", cfgBad));
                 // 用户 2026-10-04 第 2 条（他补的那句"要一起删的"）：llama 侧换模型同样不再往日志里抄一遍参数
                 // ——「已按模型 X 的 llama_models.ini [X] 段载入参数（…）；继承全局的键：…」整条退役。

@@ -10,8 +10,10 @@ Push-Location $root
 try {
     Write-Host '[1/3] dotnet publish ...'
     # 更名前（2026-10-02，DEC-032）的发布残留先清掉：publish/ 里只留新名产物 MultiLauncher.*
+    # 2026-10-22：管道直接喂 Remove-Item（不给 -LiteralPath）会让本机的 PowerShell 安全壳**整份拒跑**
+    #（报 `Remove-Item: missing path operand`，脚本一行都没执行）—— 改成逐个点名路径，行为一字不变。
     Get-ChildItem (Join-Path $root 'publish') -Filter 'StrataLauncher.*' -File -ErrorAction SilentlyContinue |
-        Remove-Item -Force -ErrorAction SilentlyContinue
+        ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue }
     dotnet publish -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o publish --nologo
     if ($LASTEXITCODE -ne 0) { throw "publish failed ($LASTEXITCODE)" }
 
@@ -104,11 +106,31 @@ try {
             if (-not (Test-Path $stDir)) { New-Item -ItemType Directory -Path $stDir | Out-Null }
             $st = Join-Path $stDir ('st-deploy-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' +
                                     (Split-Path $t -Leaf) + '.txt')
-            $p = Start-Process -FilePath (Join-Path $t 'MultiLauncher.exe') -ArgumentList @('--selftest', $st) -PassThru -Wait
-            if (-not (Test-Path -LiteralPath $st)) { throw "自检没落报告：$st（进程退出码 $( $p.ExitCode )）" }
-            $tail = (Get-Content -LiteralPath $st -Encoding UTF8) | Where-Object { $_ -match '^(TOTAL|ALL PASS|FAIL |\d+ FAILURE)' } | Select-Object -Last 4
+            # 2026-10-22（他报「自检经常弹『无法验证发布者』」）：`Start-Process` 走的是 ShellExecute，
+            # 未签名的 exe 在某些机器上会被 shell 弹一次安全警告（文件本身没有 Zone.Identifier）。
+            # 改成调用运算符（直接 CreateProcess，不经过 shell）+ 自己等它退出：不弹框，语义一字不变。
+            $exePath = Join-Path $t 'MultiLauncher.exe'
+            & $exePath --selftest $st
+            # `&` 对 GUI 程序不阻塞：先等报告文件出现，再等进程退出。
+            # 退出码取不到（不是本进程 Start 的实例，`Process.ExitCode` 读出来是空）—— 所以判定走**报告**：
+            # ALL PASS 且没有 FAIL 行。项目里报告本来就是判据（BUG-052 那条纪律吃的也是它）。
+            # 2026-10-23（审查 E 条）：等报告那一圈从 30 秒放宽到 120 秒。自检实测 37 秒（联网那一条 10 秒档
+            # + 界面布局 13 秒 + 版本引擎更新 14 秒），原来那 30 秒已经被压在脚下；一旦机器更慢，
+            # 或下面 `Get-Process` 因为读不到 Path 被筛空（那时就不等退出了），就会在一个本该全绿的自检上报
+            # 「自检没落报告」的假红。等得久一点不会误判，等不够才会。
+            for ($i = 0; $i -lt 240 -and -not (Test-Path -LiteralPath $st); $i++) { Start-Sleep -Milliseconds 500 }
+            $proc = @(Get-Process -Name 'MultiLauncher' -ErrorAction SilentlyContinue |
+                      Where-Object { try { $_.Path -eq $exePath } catch { $false } })
+            foreach ($pp in $proc) { try { $pp.WaitForExit() } catch { } }
+            if (-not (Test-Path -LiteralPath $st)) { throw "自检没落报告：$st" }
+            $lines = @(Get-Content -LiteralPath $st -Encoding UTF8)
+            $tail = $lines | Where-Object { $_ -match '^(TOTAL|ALL PASS|FAIL |\d+ FAILURE)' } | Select-Object -Last 4
             $tail | ForEach-Object { Write-Host "      $_" }
-            if ($p.ExitCode -ne 0) { throw ("实跑目录的自检没过（退出码 " + $p.ExitCode + "），报告：" + $st) }
+            $fails = @($lines | Where-Object { $_ -match '^FAIL ' })
+            $passed = @($lines | Where-Object { $_ -match '^ALL PASS' })
+            if ($fails.Count -gt 0 -or $passed.Count -eq 0) {
+                throw ("实跑目录的自检没过（FAIL " + $fails.Count + " 条、ALL PASS " + $passed.Count + " 条），报告：" + $st)
+            }
             Write-Host "      实跑自检通过：$st"
         }
     } else {

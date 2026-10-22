@@ -64,6 +64,14 @@ internal sealed partial class SettingsForm : Form
     FlowLayoutPanel PageGeneral()
     {
         var page = NewPage();
+        // 路径（2026-10-22 DEC-211，他点名）：这一组放到**最顶端**、组名改成「路径」，只留两行 ——
+        // 「数据目录 / 日志目录」按他红框删掉（要用时从「配置文件」那一行所在目录往上走一层就够了）。
+        // 形状照三个模块节的「模型配置」：名称 + 全路径 + 一枚「打开」。
+        GroupTitle(page, "路径");
+        AboutRow(page, "配置文件", MainForm.LauncherIniPath(),
+            openText: "打开", onOpen: () => _main.OpenLauncherFolder("ini"));
+        AboutRow(page, "程序目录", AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar),
+            openText: "打开", onOpen: () => _main.OpenLauncherFolder("exe"));
         // 模块开关（B 段地基，DEC-024/025）：全隐身语义；至少启用一个、关闭前先停服务（都在保存时拦）
         // 第 0 轮 DEC-094：**每个启用模块一节** 的派发从 `Key=="llama" ? ... : ...` 改成按键点名的 switch（见 PageForModule）
         GroupTitle(page, "模块");

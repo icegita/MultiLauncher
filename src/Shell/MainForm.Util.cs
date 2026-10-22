@@ -268,14 +268,16 @@ public partial class MainForm
     }
 
     // 「打开配置」开的是哪一份（第 0 轮 DEC-094 起两支实现在 MainForm.ModuleViews.cs 的 *ConfigTarget）：
-    //   Strata = **exe 同目录的 MultiLauncher.ini**（DEC-122②：「保存」写哪、打开看哪、唤醒读哪 三处从此对上；
-    //             物化产物 `data\config\strata\<tag>.json` 不再设专用入口，要看就在设置页那枚「打开」里直达目录）
+    //   Strata = **`data\config\strata\strata_models.ini`**（2026-10-22 他点名的第三版，DEC-211：直接开文件，
+    //             与 llama / Ninfer 同一形状；模型参数那 16 格与他手加的 `ArgsN` 都在这份里，
+    //             引擎实读的产物与伴生文件在旁边的 `run\` 子目录，不给入口）
+    //             壳自己的 MultiLauncher.ini 搬到设置页「通用 → 路径」，主界面这一枚不再开它）
     //   llama / Ninfer = 它们各自的家底 ini（界面「保存」写的就是它、引擎读的也是它）
     // 返回空路径时 note 就是给用户看的说明。
     internal (string Path, string Note) ActiveConfigTarget() => ActiveView.ConfigTarget();
 
     // DEC-122②：原来这里还有一条 `MaterializeActiveConfig`（打开配置前先按界面参数重新生成产物）。
-    // 打开目标改成 MultiLauncher.ini 之后那一步没有读者了，整套退役（含 ModuleView.Materialize 与三个实现）——
+    // 打开目标换成目录之后那一步更没有读者了，整套退役（含 ModuleView.Materialize 与三个实现）——
     // 一个"看一眼"的动作不该顺手写文件；产物照旧由每次启动（手动 / 唤醒）重建。
     void OpenActiveConfig()
     {
@@ -284,6 +286,23 @@ public partial class MainForm
         {
             LogActive(note);
             Toast.Show(this, note, Toast.Kind.Info);
+            return;
+        }
+        // 2026-10-22（DEC-206）：Strata 这一支给的是**目录**（一层里三份文件）—— 目录走资源管理器，
+        // 文件才走"绑过的编辑器 / 记事本"那条路（别拿 notepad 去开一个目录）。
+        if (Directory.Exists(file))
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo(file) { UseShellExecute = true });
+                LogActive("$ 打开配置目录：" + file);
+            }
+            catch (Exception ex)
+            {
+                LogActive("打开配置目录失败（" + ex.Message + "）：" + file);
+                return;
+            }
+            if (note.Length > 0) LogActive(note);
             return;
         }
         var opener = ConfigOpener(file);
@@ -330,17 +349,25 @@ public partial class MainForm
     // 打不开时的后路：在资源管理器里选中该文件
     // ---------------- 关于页/Strata 节的直达与内建引擎（DEC-055，用户反馈） ----------------
 
-    /// 「打开」直达壳自己的三处位置：ini 在资源管理器里选中它，data 与 logs 直接开目录。
+    /// 「打开」直达壳自己的四处位置：ini 在资源管理器里选中它，data / logs / 程序目录直接开目录。
     /// 目录还没生成时不弹错误框，只给一行说明（logs 要勾了「写入日志文件」跑过一次才有）。
     internal void OpenLauncherFolder(string which)
     {
         if (which == "ini")
         {
-            RevealInExplorer(ConfigPath);
-            Log("$ 在资源管理器里定位 " + ConfigPath);
+            // 2026-10-22（DEC-211，他点名）：设置页那枚「打开」也**直接打开这一份文件**（原来是在资源管理器里选中它，
+            // 等于多点一次）。文件还没生成时给一句说明，不弹错误框。
+            if (!File.Exists(ConfigPath)) { Log("还没有这份设置文件：" + ConfigPath); return; }
+            try { Process.Start(new ProcessStartInfo(ConfigPath) { UseShellExecute = true }); Log("$ 打开 " + ConfigPath); }
+            catch (Exception ex) { Log("打开设置文件失败（" + ex.Message + "）：" + ConfigPath); }
             return;
         }
-        var path = which == "data" ? LauncherDataDir() : Path.Combine(AppContext.BaseDirectory, "logs");
+        var path = which switch
+        {
+            "data" => LauncherDataDir(),
+            "exe" => AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar),   // 2026-10-22：程序目录（他点名加）
+            _ => Path.Combine(AppContext.BaseDirectory, "logs"),
+        };
         if (!Directory.Exists(path))
         {
             Log("还没有这个目录：" + path + (which == "logs" ? "（勾了「写入日志文件」并跑过一次之后才有）" : ""));

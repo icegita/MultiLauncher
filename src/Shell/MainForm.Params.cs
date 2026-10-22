@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json.Nodes;
 
 namespace MultiLauncher;
 
@@ -67,7 +68,7 @@ public partial class MainForm
         bool wroteSeg = seg == SegWrite.Wrote;
         MarkParamsSaved();      // 收口即新基线：「保存」按钮回灰（DEC-074）
         // DEC-110①：这一行走的是**激活模块那一页**的通道。以前用默认 launcher = 三页都显示，
-        // 而"保存"只写当前页那一段（Strata 写 [Model:tag]、llama 写它自己那段、Ninfer 写它的 args），
+        // 而"保存"只写当前页那一份（Strata 写 strata_models.ini 里该模型那段（DEC-210）、llama 写它自己那段、Ninfer 写它的 args），
         // 另两页根本没被碰过 —— 同 DEC-047 那条老账（壳自己写的话全用默认通道 = 等于没分流）。
         LogActive("界面参数已保存。");
         // 用户 2026-10-04 第 6 条：落点要把"改了什麼"说出来（日志那一行有全量明细，这里够短就带上）。
@@ -251,6 +252,24 @@ public partial class MainForm
     /// 盯着一个永远不会再出现的行、永远红或永远空过）。</summary>
     internal string ValueInIniForTest(string key, string section = "Current")
     {
+        // A/C（2026-10-22，DEC-206/207/210）：模型参数的家已从 ini 的 `[Model:<tag>]` 段搬到
+        // `strata_models.ini` 里同名的那一段。所有"保存才落盘"的判据读的都是这一段，所以这里按段名转一次路 ——
+        // 判据照旧打在**真正的落点**上，而不是盯着一个永远不会再出现的行（那等于把断言悄悄变成空跑，BUG-043 那一族）。
+        if (section.StartsWith(Config.ModelSnapPrefix, StringComparison.Ordinal))
+        {
+            var path = ModelParamsPath();
+            if (!File.Exists(path)) return "<没有这一行>";
+            try
+            {
+                var sec = ModelParamsIni.Parse(File.ReadAllText(path)).Find(Config.ModelSnapTag(section));
+                if (sec is null || !ModelParamsIni.TryGet(sec, key, out var raw)) return "<没有这一行>";
+                var prop = typeof(Settings).GetProperty(key);
+                if (prop is null) return "<没有这一行>";
+                if (prop.PropertyType == typeof(bool)) return TryParseIniBool(raw, out var b) && b ? "True" : "False";
+                return raw;
+            }
+            catch { return "<没有这一行>"; }
+        }
         var want = "[" + section + "]";
         bool inWanted = false;
         foreach (var line in File.ReadLines(ConfigPath))

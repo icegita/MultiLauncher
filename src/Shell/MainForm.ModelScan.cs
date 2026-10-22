@@ -435,10 +435,44 @@ public partial class MainForm
         _config.Current.LlamaReasoningEffort = s.LlamaReasoningEffort;
         ApplySettings(s);                  // 里面会 PushCard2（llama 分支带出继承标注）+ MarkParamsSaved
         OnModelChanged();
+        _llamaIniStamp = LlamaIniStamp();   // DEC-212：这一趟刚按文件载过，记下戳 —— 之后文件真变了才重读
         // 用户 2026-10-04 第 2 条：原来这里有一行「已按模型 X 的 llama_models.ini [X] 段载入参数（…）；
         // 继承全局的键：…」——日志区与 logs\llama.log 都不再打。卡2 与高级区本来就把这些值摆在界面上，
         // 换模型时它们就在变（那才是落点），再刷一行同义反复的话只是噪声；继承情况另有 tooltip 交代
         // （RefreshLlamaInheritanceTips）。logChange 这个开关位随之退役。
+        return true;
+    }
+
+    // llama 家底（`llama_models.ini`）的"版本戳" + 手改检测（2026-10-22，他报"改完 ini 重启服务，
+    // 界面上不更新，得切到别的模型再切回来才显示正确值"）。
+    // 根因同 Strata 那一侧（DEC-211）：界面卡只在**载入某一段**时读文件，启动服务不读 —— 于是他手改文件后
+    // 界面还是老值，而 `StartLlamaServer` 用 `CollectSettings()`（界面卡）取参数，起的还是老配置。
+    static string _llamaIniStamp = "";
+    internal static void ResetLlamaIniStampForTest() => _llamaIniStamp = "";
+
+    internal string LlamaIniStamp()
+    {
+        try
+        {
+            var p = RouterIniPath();
+            if (!File.Exists(p)) return "";
+            var fi = new FileInfo(p);
+            return fi.LastWriteTimeUtc.Ticks.ToString() + ":" + fi.Length.ToString();
+        }
+        catch { return ""; }
+    }
+
+    /// <summary>拉 llama 之前比一次 ini 的版本戳：变了就按当前选中的段重读一遍并推界面。
+    /// 没变 = 一个字节都不读（界面上没保存的草稿照旧参与手动启动，DEC-122① 那条区分不被破坏）。</summary>
+    internal bool ReloadLlamaRecordIfIniChanged()
+    {
+        var stamp = LlamaIniStamp();
+        if (stamp.Length == 0 || stamp == _llamaIniStamp) return false;
+        var tag = SelectedTag().Length > 0 ? SelectedTag() : _config.Current.LlamaModel;
+        if (tag.Length == 0) { _llamaIniStamp = stamp; return false; }
+        _llamaIniStamp = stamp;
+        ApplyLlamaRecord(tag);
+        LogL($"llama_models.ini 被改过，已按文件重读「{tag}」那一段");
         return true;
     }
 
@@ -460,7 +494,7 @@ public partial class MainForm
         // 「没有快照时思考档位必须归零」(DEC-064 那一格) 现在由上面的默认打底统一兜住，不再单独写。
         ApplySettings(s);
         ApplyModelFields(s, _config.Current);          // 家底与 tag 一起走，两者不再可能各说各话
-        // DEC-122③：这一族键的家已经搬到 [Model:<tag>]，[Current] 里那份副本退役之后，
+        // DEC-122③：这一族键的家已经搬出 [Current]（DEC-206/210 起落 strata_models.ini 的该段），[Current] 里那份副本退役之后，
         // "磁盘上那一份"的基准只能从记录取 —— 不这么做，关窗的「写进去 / 丢弃」就会列出十几行他从没改过的假差异。
         SyncModelBaselineFromRecord(tag);
         OnModelChanged();

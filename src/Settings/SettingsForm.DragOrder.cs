@@ -458,14 +458,9 @@ internal sealed partial class SettingsForm : Form
         // 按钮仍叫「打开」，与另三行同一套字 —— 一眼看得出"这一类行都是去某个地方"。
         AboutRow(page, "帮助", "使用说明书",
             openText: "打开", onOpen: () => Dialogs.ShowManual(this));
-        GroupTitle(page, "位置");
-        // ⑦（DEC-055）：三处位置各给一枚「打开」，直达各自目录（ini 是在资源管理器里选中它）
-        AboutRow(page, "配置文件", "MultiLauncher.ini",
-            openText: "打开", onOpen: () => _main.OpenLauncherFolder("ini"));
-        AboutRow(page, "数据目录", "data/（config / backup / tmp）",
-            openText: "打开", onOpen: () => _main.OpenLauncherFolder("data"));
-        AboutRow(page, "日志文件", "logs/（勾了「写入日志文件」后才有）",
-            openText: "打开", onOpen: () => _main.OpenLauncherFolder("logs"));
+        // 2026-10-22（DEC-209②，他点名）：这一节原来的「位置」组（数据目录 / 日志文件）**整组搬到「通用 → 位置」** ——
+        // "本程序落在哪儿"是全局的事，不该一半在通用、一半在关于；两处各说一半正是他说的"分类不对"。
+        // 关于页从此只描述**本程序自己**：版本 / 作者 / 更新源 / 更新 / 帮助。
         // 「内嵌 llama.cpp」原来挂在这里——那是 **Strata 自带**的那份 ggml/llama，已挪到 Strata 节（DEC-055）
         return page;
     }

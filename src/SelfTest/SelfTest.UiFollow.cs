@@ -197,7 +197,7 @@ internal static partial class SelfTest
                         && ltE.SameFontAsAdv && ltE.SameInkAsAdv && ltC.Text == "◂" && ltE.Text == "▾",
                         $"tip『{ltC.Tip}』Bare={ltC.Bare} 同字号={ltC.SameFontAsAdv} 同字色={ltC.SameInkAsAdv} 折叠『{ltC.Text}』/ 展开『{ltE.Text}』");
                     Check("折叠态收在 [Current]（他明确「记住上次」）：写出含 LightsCollapsed=True",
-                        MainForm.BuildConfigLines(new Settings { LightsCollapsed = true }, new Dictionary<string, Settings>(),
+                        MainForm.BuildConfigLines(new Settings { LightsCollapsed = true },
                             new MainForm.WindowRect(0, 0, 100, 100, false)).Contains("LightsCollapsed=True"));
                     var lBack = new Settings();
                     MainForm.ParseConfigLines(new[] { "[Current]", "LightsCollapsed=True" }, lBack,

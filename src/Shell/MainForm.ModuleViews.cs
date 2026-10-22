@@ -836,11 +836,10 @@ public partial class MainForm
     }
 
     // —— 「打开配置」= 打开**这一击真正落盘的那一份**（DEC-077 定的口径，DEC-079 把 llama 那一支改成"就是家底本身"，
-    //    DEC-122② 把 Strata 这一支再往前推一步：开 `MultiLauncher.ini`）——
-    //   Strata = **exe 同目录的 MultiLauncher.ini**：「保存」写的就是它（`[Model:<tag>]` 那一段）、
-    //            DEC-122① 之后唤醒读的也是它 —— "保存写哪 / 打开看哪 / 唤醒读哪"三处从此对上（用户点名）。
-    //            物化产物 `data\config\strata\<tag>.json` 从此**不设专用入口**（它是引擎实读的那一份、每次启动前重建；
-    //            要看就在设置页 Strata 节「模型配置目录」那枚「打开」里直达，文件自己点开）。
+    //    DEC-122② 把 Strata 这一支改成开壳 ini；**2026-10-22 再改两次（DEC-206 → DEC-211）**）——
+    //   Strata = **`data\config\strata\strata_models.ini` 这一份文件**：一个模型一段，段里就是界面那 16 格 +
+    //            他手加的 `Args1..ArgsN`（引擎实读的产物在旁边的 `run\` 子目录，不给入口 —— 那两份每次启动重建）。
+    //            壳自己的 `MultiLauncher.ini` 从这里退出：它搬到设置页「通用 → 路径」那一行（他点名）。
     //   llama  = data\config\llama\llama_models.ini（取消融合层之后界面改的就是它、引擎读的也是它）
     // 返回空路径时 note 就是给用户看的说明。
     (string Path, string Note) StrataConfigTarget()
@@ -848,16 +847,16 @@ public partial class MainForm
         var s = _config.Current;
         var tag = SelectedTag();
         if (tag.Length == 0) tag = s.Model;         // 下拉还没值时退回已保存的选中项
-        if (!File.Exists(ConfigPath))
-            return ("", "还没有配置文件：" + ConfigPath + "（点一次「保存」就会写出来）");
-        // 说明里的两处落点都按当前选中的模型填实（DEC-122② 的口径：本模型的参数在哪一段 + 引擎侧细节在哪份模板）
-        var seg = tag.Length > 0 ? "[Model:" + tag + "]" : "[Model:<模型名>]";
-        var tpl = tag.Length > 0 ? Path.Combine(s.Root, "strata-" + tag + ".json")
-                                 : Path.Combine(s.Root, @"strata-<tag>.json");
-        return (ConfigPath,
-            "本模型的参数在文件里 " + seg + " 那一段（界面上改的、点「保存」写的就是这里）；" +
-            "引擎侧细节（--pack / --native / --mtp 这些）在模板 " + tpl + "（给人手编，壳只读不写）。" +
-            "手改本文件请先退出外壳（否则下次保存会盖掉你改的），改完下次启动生效。");
+        var dir = RunConfigDir();
+        if (!Directory.Exists(dir))
+            return ("", "还没有配置目录：" + dir + "（点一次「启动」就会生成；界面上改模型参数点「保存」也会写进去）");
+        // 2026-10-22（DEC-211，他点名）：**直接开 `strata_models.ini` 这一份文件**，不再开目录 ——
+        // 目录里剩下的产物与伴生都在 `run\` 里、本来就不该他碰，开目录反而要多走一步。
+        // 形状与 llama / Ninfer 那两支对齐（开各自的家底 ini，说明只留一句）。
+        var store = ModelParamsPath();
+        if (!File.Exists(store))
+            return (dir, "还没有 " + ModelParamsFileName + "（点一次「启动」或界面上「保存」就会生成）：" + dir);
+        return (store, "改完点「停止」再「启动」就生效（后台会重读这份文件）。");
     }
 
     (string Path, string Note) LlamaConfigTarget()

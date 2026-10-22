@@ -14,6 +14,9 @@ public partial class MainForm
     void StartLlamaServer()
     {
         if (LlamaRunning) return;
+        // DEC-212（2026-10-22，他报"改完 ini 重启服务界面不更新"）：拉起之前先看家底文件有没有被人改过 ——
+        // 改过就按当前选中的段重读一遍并推界面（`CollectSettings()` 取的是界面卡，卡不更新 = 起的还是老配置）。
+        ReloadLlamaRecordIfIniChanged();
         // 模块开关（B 段地基，DEC-024）：停用的模块不起进程（全隐身）
         if (!ModuleRegistry.LlamaEnabled(_config.Current))
         {
