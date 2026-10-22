@@ -30,6 +30,24 @@ public partial class MainForm
 
     // ---------------- 准入（§5.1 四条） ----------------
 
+    /// <summary>**进程形态判据**（BUG-082，2026-10-23）：只看宿主是不是 dotnet，**不看文件名**。
+    /// 起因：从 Release 下载的产物名带版本号（`MultiLauncher-0.1.8.5-windows-x64.exe` —— workflow 故意改的名），
+    /// 旧判据按"名字必须等于 MultiLauncher.exe"直接判开发态 → **第一次跑就永远不能自更新**，
+    /// 而且那句缘由写的是"用 dotnet 跑 dll"（另一件事），把人引向错误的排查方向（他 2026-10-23 实测撞上）。
+    /// 替换链本身全用 `Environment.ProcessPath` 拼路径，helper 的 `taskkill`/`start` 也按这个文件名取，
+    /// 所以改名完全自洽 —— 拦它没有理由。真正该拦的只有一件事：宿主是 dotnet（dll 形态，没有本程序的 exe）。</summary>
+    internal static bool IsSelfReplaceableProcess(string? processPath, out string why)
+    {
+        why = "";
+        var exe = (processPath ?? "").Trim();
+        if (exe.Length == 0) { why = "拿不到当前进程的路径，不能替换自己"; return false; }
+        if (!exe.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+        { why = "当前不是 exe 形态（" + Path.GetFileName(exe) + "），不支持自动更新"; return false; }
+        if (string.Equals(Path.GetFileName(exe), "dotnet.exe", StringComparison.OrdinalIgnoreCase))
+        { why = "当前是开发态（用 dotnet 托管宿主跑 dll），不支持自动更新"; return false; }
+        return true;
+    }
+
     /// <summary>能不能自动换掉自己。一条不满足就拒绝（调用方把 `why` 原样给人看 + 给手动下载地址）。</summary>
     internal bool CanSelfReplace(out string why)
     {
@@ -40,9 +58,9 @@ public partial class MainForm
             return false;
         }
         var exe = Environment.ProcessPath ?? "";
-        if (!string.Equals(Path.GetFileName(exe), AppExeName, StringComparison.OrdinalIgnoreCase))
+        if (!IsSelfReplaceableProcess(exe, out var shapeWhy))
         {
-            why = "当前是开发态（用 dotnet 托管宿主跑 dll），不支持自动更新";
+            why = shapeWhy;
             return false;
         }
         var dir = Path.GetDirectoryName(exe) ?? "";
@@ -360,15 +378,19 @@ public partial class MainForm
                 if (!File.Exists(f)) continue;
                 var first = SafeReadText(f).Replace('\r', '\n').Split('\n').FirstOrDefault(l => l.Trim().Length > 0)?.Trim() ?? "";
                 if (first.Length == 0) continue;
+                // BUG-082：兜底路径按**当前这个 exe 的真实文件名**给（可能是 `MultiLauncher-0.1.8.5-windows-x64.exe`），
+                // 别拿常量拼 —— 那样指向的文件根本不存在，叫人去哪儿找 .old
+                var exeFull = Environment.ProcessPath ?? "";
+                var exeDir = exeFull.Length > 0 ? Path.GetDirectoryName(exeFull) ?? "" : "";
+                var exeName = exeFull.Length > 0 ? Path.GetFileName(exeFull) : AppExeName;
                 if (first.StartsWith("ok", StringComparison.OrdinalIgnoreCase))
                 {
-                    Log("本程序已更新（helper 回执：" + first + "）；旧版留在 " + Path.Combine(Environment.ProcessPath is null ? "" : Path.GetDirectoryName(Environment.ProcessPath) ?? "", AppExeName + AppOldSuffix));
+                    Log("本程序已更新（helper 回执：" + first + "）；旧版留在 " + Path.Combine(exeDir, exeName + AppOldSuffix));
                 }
                 else
                 {
-                    var exeDir = Environment.ProcessPath is null ? "" : Path.GetDirectoryName(Environment.ProcessPath) ?? "";
                     Log("本程序更新没成功（helper 回执：" + first + "）。旧版已自动换回；手工兜底的两处：" +
-                        Path.Combine(exeDir, AppExeName + AppOldSuffix) + " 与 " + Path.Combine(exeDir, AppExeName + AppNewSuffix) +
+                        Path.Combine(exeDir, exeName + AppOldSuffix) + " 与 " + Path.Combine(exeDir, exeName + AppNewSuffix) +
                         "（把 .old 去掉后缀即可回到旧版）。");
                     Toast.Show(this, "上次更新没成功，已自动回到旧版（详见日志）", Toast.Kind.Warn);
                 }

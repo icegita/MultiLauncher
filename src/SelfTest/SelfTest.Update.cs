@@ -165,8 +165,15 @@ internal static partial class SelfTest
                 var live = MainForm.ParseLlamaRelease(File.ReadAllText(llamaTmp), suffix);
                 W("llama.cpp 远端: " + live.Tag + "  包: " + live.AssetName + "  发布: " + live.Published
                     + "  digest: " + (live.Sha256.Length > 0 ? live.Sha256 : "（上游没给）") + "  size: " + live.Size);
-                Check("④ 真实列表里解析出带 " + suffix + " 包的 b 号版本",
-                    live.Tag.StartsWith("b", StringComparison.OrdinalIgnoreCase) && live.AssetUrl.Length > 0, live.Tag);
+                // 2026-10-23（BUG-083）：**列表是空的就不能判红**。实测这台机器经代理取回来的就是 `[]`
+                // （HTTP 200 + 合法 JSON 数组，一条都没有），于是这条判据天天红、红的原因跟本程序无关 ——
+                // 与 BUG-052 同族（"用户机器上恰好有什么，不该决定用例红绿"）。取到非空列表却解析不出，
+                // 才是本程序的问题，那才红。判不了就明写 SKIP，别冒充通过。
+                if (live.Tag.Length == 0)
+                    W("SKIP  ④ 拿到了 llama.cpp 的列表但没有可用的 b 号版本（空列表 / 代理缓存，判不了：不判红）");
+                else
+                    Check("④ 真实列表里解析出带 " + suffix + " 包的 b 号版本",
+                        live.Tag.StartsWith("b", StringComparison.OrdinalIgnoreCase) && live.AssetUrl.Length > 0, live.Tag);
                 W("llama.cpp 本地 " + LlamaIni.DirVersion(new Settings().LlamaDir) + " vs 远端 " + live.Tag
                     + " → " + (MainForm.LlamaBuildOf(live.Tag) - MainForm.LlamaBuildOf(LlamaIni.DirVersion(new Settings().LlamaDir)))
                     + "（>0 表示有新版本）");

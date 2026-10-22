@@ -1,6 +1,6 @@
 # MultiLauncher 混合启动器 · 使用说明书
 
-适用版本：**v0.1.8.5** ｜ 平台：Windows 10 / 11（x64）。文中出现的路径、模型名、端口、密钥、版本号均为**示例或占位符**，请以本机实际值为准。
+适用版本：**v0.1.8.6** ｜ 平台：Windows 10 / 11（x64）。文中出现的路径、模型名、端口、密钥、版本号均为**示例或占位符**，请以本机实际值为准。
 
 ---
 
@@ -54,7 +54,7 @@ MultiLauncher 是一个**本地大模型启动器**。它把原本要在命令�
 | `logs/` | 日志文件（勾了「写入日志文件」后才有） |
 | `data/config/llama/llama_models.ini` | llama 的配置本体 |
 | `data/config/ninfer/ninfer_models.ini` | Ninfer 的配置本体 |
-| `data/config/strata/` | **壳的参数就一份**：`strata_models.ini`（一个模型一段：16 格 = 界面上改的参数、`Args1..ArgsN` = 你手加的上游新参数）；`run\` 子目录 = 引擎实读的 `<模型名>.json`（每次启动前重建，别手改）与 `<模型名>.shared-settings.json` |
+| `data/config/strata/strata_models.ini` | Strata 的配置本体 |
 | `data/backup/llama/` | llama 的配置备份 |
 | `data/backup/ninfer/` | Ninfer 的配置备份 |
 | `data/backup/ninfer-exe/` | Ninfer 的引擎 exe 备份（二进制单独一格） |

@@ -90,14 +90,31 @@ internal static partial class SelfTest
         MainForm.AppSelfReplaceDisabledForTest = false;
         try
         {
+            // BUG-082（2026-10-23）：这里原来按"宿主名 != MultiLauncher.exe"判，等于把被测逻辑的缺陷
+            // 抄进判据里 —— 从 Release 下载的产物名带版本号，一改名这条就红（用户机器上恰好是什么名字
+            // 决定红绿，BUG-052 同族）。现在按**形态**判：宿主是 dotnet.exe 才算开发态。
             var hostName = Path.GetFileName(Environment.ProcessPath ?? "");
-            bool isDotnetHost = !string.Equals(hostName, MainForm.AppExeName, StringComparison.OrdinalIgnoreCase);
+            bool isDotnetHost = string.Equals(hostName, "dotnet.exe", StringComparison.OrdinalIgnoreCase);
             bool ok = ui.CanSelfReplace(out var whyNow);
             Check("DEC-202 准入：闸关着时按进程形态判 —— dotnet 宿主拒（缘由落开发态）、实跑 exe 放行",
                 isDotnetHost ? (!ok && whyNow.Contains("开发态")) : ok,
                 $"宿主={hostName} 放行={ok} 缘由={whyNow}");
         }
         finally { MainForm.AppSelfReplaceDisabledForTest = gate; }
+
+        // ⑤b（BUG-082）：准入的**形态判据本身**喂样本 —— 纯函数，不依赖本机跑的是什么。
+        // 他 2026-10-23 实测撞到的就是这一条：跑的是 `MultiLauncher-0.1.8.4-windows-x64.exe`（Release 的命名），
+        // 旧判据按名字拦下来，提示还说"用 dotnet 跑 dll"。
+        {
+            bool renamed = MainForm.IsSelfReplaceableProcess(@"D:\any\MultiLauncher-0.1.8.5-windows-x64.exe", out _);
+            bool plain = MainForm.IsSelfReplaceableProcess(@"D:\MultiLauncher\MultiLauncher.exe", out _);
+            bool dotnet = MainForm.IsSelfReplaceableProcess(@"C:\Program Files\dotnet\dotnet.exe", out var wDot);
+            bool notExe = MainForm.IsSelfReplaceableProcess(@"C:\x\foo.dll", out _);
+            bool noPath = MainForm.IsSelfReplaceableProcess("", out _);
+            Check("BUG-082 准入按进程形态判、不按文件名：带版本号名字的 exe 放行；dotnet 宿主 / 非 exe / 空路径拒",
+                renamed && plain && !dotnet && wDot.Contains("开发态") && !notExe && !noPath,
+                $"改名={renamed} 原名={plain}｜dotnet={dotnet}（{wDot}）｜dll={notExe}｜空={noPath}");
+        }
 
         // ---------------- ⑥ 页头徽标 ----------------
         var offState = ui.AppBadgeStateForTest();
