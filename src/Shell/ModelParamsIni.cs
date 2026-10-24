@@ -7,13 +7,18 @@ namespace MultiLauncher;
 /// 形状 —— 一个模型一段，键名与界面那 16 格同名（与老 `[Model:&lt;tag&gt;]` 段同一套字，所以他不用学第二套）：
 /// <code>
 /// [iq3_s]
-/// ApiModel=qwen3.8-flash-next-iq3_s
-/// Context=262144
-/// Kv=int8
+/// ApiModel = qwen3.8-flash-next-iq3_s
+/// Context = 262144
+/// Kv = int8
 /// ...
-/// Args1=--fake-flag
-/// Args2=1
+/// Args1 = --fake-flag
+/// Args2 = 1
+/// {resident-budget-gib = 48}      ← 2026-10-24 另一种写法：一行一块（DEC-219，见 ReadBraceArgs）
 /// </code>
+///
+/// 等号两边各一个空格（2026-10-24 他点：「VramReserveMib = 1600 弄成这种，方便查看，也与其他 2 个模块统一」）——
+/// 与 `llama_models.ini` / `ninfer_models.ini` 同一套手感。**只改写侧**：`KeyOf` / `ValueOf` 两侧都 `Trim`，
+/// 所以老的无空格文件照读不误；保存一次那 16 格就自然转成新格式（值一个都不动）。
 ///
 /// 为什么换（他给的由头是"容易改错"，这个判断是对的）：
 ///   · JSON 少一个逗号 / 引号 = **整份读不动** → 按"坏了不写"的纪律，保存会一直失败；
@@ -29,6 +34,16 @@ internal static class ModelParamsIni
 {
     /// <summary>手加参数的键前缀：`Args1` / `Args2` …（一行一个 token，他选的形态）。</summary>
     internal const string ArgsKeyPrefix = "Args";
+
+    /// <summary>写回时键与值之间的分隔：<c> = </c>（等号两边各一个空格，2026-10-24 他点的「与其他 2 个模块统一」）。
+    /// 读侧 <see cref="KeyOf"/> / <see cref="ValueOf"/> 两侧都 Trim，所以老的无空格行照读；写一次就转成新格式。</summary>
+    internal const string KeyValueSeparator = " = ";
+
+    /// <summary>拼一行键值。**值为空时不留尾随空格**（写成 <c>LayerSplit =</c> 而不是 <c>LayerSplit = 后面挂一个看不见的空格</c>）——
+    /// 空值是常态（<c>LayerSplit</c> / <c>ArenaPinGib</c> / <c>ExtraArgs</c> / <c>ReasoningEffort</c> 常空），
+    /// 满文件尾随空白翻起来刺眼，diff 里也容易被看成改动。读侧照旧 <c>Trim</c>，两种写法等价。</summary>
+    internal static string KeyLine(string key, string value) =>
+        value.Length == 0 ? key + KeyValueSeparator.TrimEnd() : key + KeyValueSeparator + value;
 
     internal sealed class Section
     {
@@ -136,7 +151,7 @@ internal static class ModelParamsIni
         }
         foreach (var pair in kv)
         {
-            var line = pair.Key + "=" + pair.Value;
+            var line = KeyLine(pair.Key, pair.Value);
             int at = sec.Body.FindIndex(l => KeyOf(l) is { } k && k.Equals(pair.Key, StringComparison.OrdinalIgnoreCase));
             if (at >= 0) sec.Body[at] = line;
             else sec.Body.Insert(LastKeyLineIndex(sec.Body), line);
@@ -172,6 +187,60 @@ internal static class ModelParamsIni
         return numbered.OrderBy(x => x.N).Select(x => x.V).ToList();
     }
 
+    /// <summary>段里的花括号手加参数（DEC-219，2026-10-24 他点的「统一写法」）：`{参数名 = 值}` 一行一块。
+    /// 摊成 `--参数名` + `值` 两个 token（无值开关 `{vision}` 摊成单 token），交给 `MergeExtraArgs` —— 合并语义零改动。
+    /// **只认一行一块**：`{` 单起一行、`}` 另起一行都不认，往 <paramref name="warnings"/> 里点名
+    /// （为什么不做跨行块：见 `docs/design/方案-strata参数花括号写法-2026-10-24.md` §3 —— 块内后续行没有花括号前缀，
+    /// 会被 `KeyOf` 交成裸键名，壳保存时就可能命中原位替换 / 把块切开）。
+    /// </summary>
+    internal static List<string> ReadBraceArgs(Section sec, List<string> warnings)
+    {
+        var tokens = new List<string>();
+        for (int i = 0; i < sec.Body.Count; i++)
+        {
+            var t = sec.Body[i].Trim();
+            if (t.Length == 0 || t[0] == ';' || t[0] == '#') continue;
+            if (t[0] != '{' && t[^1] != '}') continue;         // 普通 16 格 / ArgsN 行，不归这一支管
+            if (t[0] != '{')                                   // 只有 } 没有 {：跨行块的后半截，或手抖多打一个
+            {
+                warnings.Add($"[{sec.Name}] 第 {i + 1} 行有一个没有配对「{{」的「}}」：花括号只认一行一块，这一行按没有处理（{t}）");
+                continue;
+            }
+            if (t[^1] != '}')                                  // { 开头却没在行尾收口
+            {
+                int close = t.IndexOf('}');
+                warnings.Add(close > 0
+                    ? $"[{sec.Name}] 第 {i + 1} 行的花括号块后面还有别的内容：一块写一行，这一行按没有处理（{t}）"
+                    : $"[{sec.Name}] 第 {i + 1} 行是「{{」单起一行：花括号只认一行一块（{{参数名 = 值}}），跨行块不认，这一行按没有处理");
+                continue;
+            }
+            var inner = t[1..^1].Trim();
+            if (inner.Length == 0)
+            {
+                warnings.Add($"[{sec.Name}] 第 {i + 1} 行是个空的花括号块：这一行按没有处理");
+                continue;
+            }
+            int eq = inner.IndexOf('=');
+            var name = (eq < 0 ? inner : inner[..eq]).Trim();
+            if (name.Length == 0)
+            {
+                warnings.Add($"[{sec.Name}] 第 {i + 1} 行的花括号块没有参数名：这一行按没有处理（{t}）");
+                continue;
+            }
+            if (!name.StartsWith("--", StringComparison.Ordinal)) name = "--" + name;   // 带不带 -- 都容忍
+            tokens.Add(name);
+            if (eq < 0) continue;                              // {vision} = 无值开关，只产出一个 token
+            var val = inner[(eq + 1)..].Trim();
+            if (val.Length == 0)
+            {
+                warnings.Add($"[{sec.Name}] 第 {i + 1} 行的「{name}」值是空的：按无值开关处理（只出 {name} 一个 token）");
+                continue;
+            }
+            tokens.Add(val);                                   // 值取第一个 = 之后整段 → 值里带空格也不会串
+        }
+        return tokens;
+    }
+
     /// <summary>把一串 token 写成 `Args1..ArgsN`（先删旧的 `ArgsN` 行，再按顺序追加；注释与别的键不动）。</summary>
     internal static void WriteArgs(Doc doc, string tag, IReadOnlyList<string> args)
     {
@@ -188,7 +257,7 @@ internal static class ModelParamsIni
         if (args.Count == 0) return;
         int at = LastKeyLineIndex(sec.Body);
         for (int i = 0; i < args.Count; i++)
-            sec.Body.Insert(at + i, ArgsKeyPrefix + (i + 1) + "=" + args[i]);
+            sec.Body.Insert(at + i, KeyLine(ArgsKeyPrefix + (i + 1), args[i]));
     }
 
     /// <summary>整份文本（CRLF，无 BOM 的那一份由调用方定编码）。</summary>

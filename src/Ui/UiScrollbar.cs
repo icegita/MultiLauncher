@@ -44,6 +44,13 @@ internal sealed class UiScrollbar : Control
     public int Value => _value;
     public bool Scrollable => _total > _page;
 
+    /// <summary>滑条要不要出面（2026-10-23，BUG-086）：**按真几何** —— 内容比可视高才出面。
+    /// 旧实现靠原生 `VScrollBar` 的 `Maximum/LargeChange` 判，那两个值在"页面还在构造期被隐藏 / 尺寸未定"
+    /// 时是陈旧的：关于页实测停在 `max=478 large=100`，于是内容明明比可视短一屏（480 vs 812）也被判成可滚，
+    /// 右边缘挂出一条拇指只有两成高的空条（他 2026-10-23 截图报的就是这条）。
+    /// `DisplayRectangle` 与 `ClientSize` 才是这一刻的事实。</summary>
+    internal static bool BarNeeded(int contentHeight, int viewHeight) => contentHeight > Math.Max(1, viewHeight);
+
     // 更新范围与当前位置（total = 内容总量，page = 可视量，value = 起点）
     public void Set(int total, int page, int value)
     {
@@ -187,9 +194,11 @@ internal sealed class UiScrollbar : Control
             {
                 int w = Math.Max(UiTheme.S(host, 10), SystemWidth(UiTheme.Dpi));
                 bar.SetBounds(host.Right - w, host.Top, w, host.Height);
-                var vs = host.VerticalScroll;
-                bar.Set(vs.Maximum, vs.LargeChange, -host.AutoScrollPosition.Y);
-                bar.Visible = bar.Scrollable && host.Visible;
+                // 2026-10-23（BUG-086）：范围按**真几何**算，不读原生 VScrollBar 的那两个陈旧值（见 BarNeeded 的注释）。
+                var contentH = host.DisplayRectangle.Height;
+                var viewH = Math.Max(1, host.ClientSize.Height);
+                bar.Set(contentH, viewH, -host.AutoScrollPosition.Y);
+                bar.Visible = UiScrollbar.BarNeeded(contentH, viewH) && host.Visible;
             }
             finally { busy = false; }
         }

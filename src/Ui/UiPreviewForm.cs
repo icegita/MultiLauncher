@@ -274,6 +274,21 @@ internal sealed partial class UiPreviewForm : Form
             UiTheme.CaptureDpi(main.Handle);
             using var sf = new SettingsForm(main, new Settings());
             sf.ShowTabForTest(1);            // Strata 节
+            // 2026-10-23：先按**真机默认窗高**量一遍每页的滚动现场（下面那句 ClientSize=1090 是为了截图看得全，
+            // 会把这个症状掩掉 —— 他就是在默认窗高下看到关于页挂着一条没用的滑条）。
+            sf.Show();
+            for (int pg = 0; pg < 5; pg++)
+            {
+                sf.ShowTabForTest(pg);
+                for (int i = 0; i < 4; i++) { Application.DoEvents(); Thread.Sleep(40); }
+                Console.WriteLine(sf.PageScrollDiagForTest(pg));
+            }
+            // BUG-086 的现场：**默认窗高**下的关于页（旧版这里右边缘会挂一条两成高的空滑条）
+            sf.ShowTabForTest(4);
+            for (int i = 0; i < 8; i++) { Application.DoEvents(); Thread.Sleep(40); }
+            CaptureWindow(sf, Path.Combine(args[2], "settings-00-关于页-默认窗高.png"));
+            sf.ShowTabForTest(1);
+            sf.Hide();
             // 出图要一次看全「维护」组：把窗拉高（真机仍是 640，这里只为截图）
             sf.ClientSize = new Size(sf.ClientSize.Width, UiTheme.S(sf, 1090));
             sf.Show();

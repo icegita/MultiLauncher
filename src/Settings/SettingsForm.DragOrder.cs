@@ -476,6 +476,22 @@ internal sealed partial class SettingsForm : Form
         return rows;
     }
 
+    // 2026-10-23（他报「关于页其实不该出现滚动条」）：把一页的滚动现场量出来 —— 内容比可视高多少、
+    // 最靠下的那个子控件是谁。只在出图台/自检里用，不参与运行路径。
+    internal string PageScrollDiagForTest(int i)
+    {
+        var p = _pages[i];
+        var names = _segTabs.ItemsForTest;
+        var name = names.Length > i ? names[i] : ("#" + i);
+        var kids = p.Controls.Cast<Control>()
+            .OrderByDescending(c => c.Bottom).Take(3)
+            .Select(c => $"{c.GetType().Name}@y{c.Top}+h{c.Height}(vis={c.Visible})");
+        return $"diag[{name}] client={p.ClientSize} display={p.DisplayRectangle.Size} "
+             + $"vscroll[max={p.VerticalScroll.Maximum} large={p.VerticalScroll.LargeChange} vis={p.VerticalScroll.Visible}] "
+             + $"auto={p.AutoScroll} min={p.AutoScrollMinSize} pad={p.Padding} "
+             + $"pref={p.PreferredSize} | 最靠下三个: {string.Join(" / ", kids)}";
+    }
+
     // 自检用：逐行导出「标题 vs 右侧控件」的垂直中心差（px，0 = 同一水平线）。
     // 存在的意义：这一版之前标题按固定 Top 摆，150% DPI 下比输入框中心高约 10px（用户反馈"太靠上"）。
     internal List<string> DumpRowAlignment()

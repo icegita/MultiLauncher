@@ -8,6 +8,21 @@ internal static partial class SelfTest
 {
     internal static void UiLayoutChecks()
     {
+            // --- BUG-086（2026-10-23，他截图报「关于页挂着一条没用的滑条」）：滑条出面只认真几何 ---
+            // 旧判据读原生 VScrollBar 的 Maximum/LargeChange，那两个值在"页面构造期被隐藏/尺寸未定"时是陈旧的
+            // （关于页实测停在 max=478 large=100 → 内容 480 比可视 812 还短，却判成可滚、画出一条两成高的拇指）。
+            Check("BUG-086 滑条只按真几何出面：内容不足一屏不出、多一像素才出（不读原生 VScroll 的陈旧值）",
+                !UiScrollbar.BarNeeded(480, 812) && !UiScrollbar.BarNeeded(812, 812)
+                && UiScrollbar.BarNeeded(813, 812) && UiScrollbar.BarNeeded(2454, 812)
+                && UiScrollbar.BarNeeded(10, 0),
+                $"480/812={UiScrollbar.BarNeeded(480, 812)} 812/812={UiScrollbar.BarNeeded(812, 812)} "
+                + $"813/812={UiScrollbar.BarNeeded(813, 812)} 10/0={UiScrollbar.BarNeeded(10, 0)}");
+            // 挂载点必须按几何同步（源码守则）：只喂样本不够，得钉住"真路径用的是 DisplayRectangle 而不是 VScroll"
+            int geomHits = CodeHitsBetween("UiScrollbar.cs", "public static UiScrollbar AttachTo", "bar.SyncNow = Sync", "DisplayRectangle.Height");
+            int vsHits = CodeHitsBetween("UiScrollbar.cs", "public static UiScrollbar AttachTo", "bar.SyncNow = Sync", "host.VerticalScroll");
+            Check("BUG-086 挂载点按真几何同步（那一段里不许再出现 host.VerticalScroll）",
+                geomHits is 1 or -1 && vsHits is 0 or -1, $"DisplayRectangle={geomHits} VerticalScroll={vsHits}");
+
             // --- 用例 5：版本比较 ---
             Check("0.1.29 > 0.1.28", MainForm.CompareVersion("0.1.29", "0.1.28") > 0);
             Check("0.1.9 < 0.1.10", MainForm.CompareVersion("0.1.9", "0.1.10") < 0);
@@ -43,8 +58,10 @@ internal static partial class SelfTest
                 // 档位改判记账：我先按"成批新功能"发成 0.1.9.0，他判这批算补丁位 → 同批改判重发（DEC-182 那条注释里也记了）。
                 // DEC-202/203（2026-10-21）：本程序自更新 = 一整条新链（第 4 条更新链），他点名「升小版本号」并在同一条消息里
                 // 纠正为「0.1.8.4」—— 本项目的"小版本号"= 末位（与 DEC-182 那次改判同一口径）。
-                Check("版本号 = v0.1.8.6（csproj 0.1.8.6；BUG-084/085 自更新准入与联网判据那批修复，按末位）",
-                    MainForm.VersionTag() == "v0.1.8.6", MainForm.VersionTag());
+                // DEC-219/220（2026-10-25）：花括号手加键写法 + 手加键日志出声 + ini 键值行「Key = Value」，
+                // 全是读侧与外观收口、没有新功能 → 按 DEC-110 只升末位（0.1.8.6 → 0.1.8.7）。
+                Check("版本号 = v0.1.8.7（csproj 0.1.8.7；花括号手加键与 ini 键值行格式那批，按末位）",
+                    MainForm.VersionTag() == "v0.1.8.7", MainForm.VersionTag());
                 Check("版本显示不吃进提交号与空白（InformationalVersion 形如 0.1.8.3+<sha>，'+' 之后必须切干净）",
                     !MainForm.VersionTag().Contains('+') && !MainForm.VersionTag().Contains(' '), MainForm.VersionTag());
                 // DEC-180 的机器版护栏：csproj 里**只许有一个** `<Version>` 真标签。这个坑本仓库栽过两次 ——

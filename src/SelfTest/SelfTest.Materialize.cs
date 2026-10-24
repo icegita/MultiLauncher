@@ -348,18 +348,30 @@ internal static partial class SelfTest
 
         // --- 判据 1：新 flag 追加、同名 flag 原位替换、裸值追加并告警 ---
         {
+            // 2026-10-24 甲：模板里没有这个 flag → 追加**并出声**（拼错时这是唯一的信号；不是白名单，只提示）
             var w = new List<string>();
             var m = MainForm.MergeExtraArgs(tpl, new List<string> { "--fake-flag", "1" }, ov, w, out var ignored);
-            Check("C 判据1a 合并：模板里没有的 flag 追加到末尾（值成对跟过来、不告警）",
-                m.Count == tpl.Count + 2 && m[^2] == "--fake-flag" && m[^1] == "1" && ignored == 0 && w.Count == 0,
-                string.Join(" ", m) + "｜告警 " + w.Count + " 条");
+            Check("C 判据1a 合并：模板里没有的 flag 追加到末尾（值成对跟过来）+ 一条提示点名「模板里没有这一项」",
+                m.Count == tpl.Count + 2 && m[^2] == "--fake-flag" && m[^1] == "1" && ignored == 0
+                && w.Count == 1 && w[0].Contains("--fake-flag") && w[0].Contains("模板里没有"),
+                string.Join(" ", m) + "｜告警 " + w.Count + " 条：" + string.Join(" / ", w));
         }
         {
+            // 2026-10-24 覆盖出声：同名换了个值 → 原位替换 + 点名「模板原来是 X、现在按 Y 走」
             var w = new List<string>();
             var m = MainForm.MergeExtraArgs(tpl, new List<string> { "--pack", "other.gguf" }, ov, w, out _);
-            Check("C 判据1b 合并：同名 flag 原位替换（位置不动、整份只出现一次）",
-                m.Count == tpl.Count && m[0] == "--pack" && m[1] == "other.gguf" && m.Count(x => x == "--pack") == 1,
-                string.Join(" ", m));
+            Check("C 判据1b 合并：同名 flag 原位替换（位置不动、整份只出现一次），值真变了就出声点出原值与新值",
+                m.Count == tpl.Count && m[0] == "--pack" && m[1] == "other.gguf" && m.Count(x => x == "--pack") == 1
+                && w.Count == 1 && w[0].Contains("--pack") && w[0].Contains("m.gguf") && w[0].Contains("other.gguf"),
+                string.Join(" ", m) + "｜" + string.Join(" / ", w));
+        }
+        {
+            // 覆盖出声的反面：手加键写的值与模板一模一样 → 不出声（不制造噪声）
+            var w = new List<string>();
+            var m = MainForm.MergeExtraArgs(tpl, new List<string> { "--pack", "m.gguf" }, ov, w, out _);
+            Check("C 判据1b2 合并：手加键的值与模板一模一样 → 一条告警都不出（静默通过）",
+                m.Count == tpl.Count && w.Count == 0,
+                string.Join(" ", m) + "｜告警 " + w.Count + " 条：" + string.Join(" / ", w));
         }
         {
             var w = new List<string>();
@@ -367,6 +379,23 @@ internal static partial class SelfTest
             Check("C 判据1c 合并：裸值（位置参数）追加末尾 + 告警一条点名它",
                 m[^1] == "positional-x" && m.Count == tpl.Count + 1 && w.Count == 1 && w[0].Contains("positional-x"),
                 string.Join(" ", m) + "｜" + string.Join(" / ", w));
+        }
+        {
+            // 2026-10-24 他点「同一段同一条只报一次」：同一个 flag 手写了两遍 → 提示只出一条
+            var w = new List<string>();
+            var m = MainForm.MergeExtraArgs(tpl, new List<string> { "--fake-flag", "1", "--fake-flag", "2" }, ov, w, out _);
+            Check("C 判据1e 合并：同一个 flag 手加键写了两遍 → 「模板里没有这一项」只报一次（同一段同一条只报一次）",
+                m.Count(x => x == "--fake-flag") == 1 && w.Count == 1 && w[0].Contains("--fake-flag"),
+                string.Join(" ", m) + "｜告警 " + w.Count + " 条：" + string.Join(" / ", w));
+        }
+        {
+            // 同一条覆盖写了两遍也同理：只报一条，且点的是模板原值（不是中间那次手加值）
+            var w = new List<string>();
+            var m = MainForm.MergeExtraArgs(tpl, new List<string> { "--pack", "other.gguf", "--pack", "third.gguf" }, ov, w, out _);
+            Check("C 判据1f 合并：同一条覆盖写了两遍 → 只报一条，点的是模板原值到最终值",
+                m.Count(x => x == "--pack") == 1 && Value(m, "--pack") == "third.gguf"
+                && w.Count == 1 && w[0].Contains("m.gguf") && w[0].Contains("other.gguf"),
+                string.Join(" ", m) + "｜告警 " + w.Count + " 条：" + string.Join(" / ", w));
         }
         {
             // 模板自己重复写同一个 flag（上游配错）时也收成一条 —— 方案 C6 要的是"合并结果里只出现一次"
@@ -545,6 +574,58 @@ internal static partial class SelfTest
                 }
                 catch { /* 清不掉不影响结论 */ }
                 try { File.Delete(MainForm.EffectiveConfigPath(target.Tag)); } catch { }
+            }
+        }
+
+        // --- 判据 6（DEC-219）：花括号写法的端到端 —— 只写在段里的 `{参数名 = 值}` 行，物化之后是不是真进了产物 ---
+        // 为什么单独一条：13a/13d 只钉到"读出来 / 合并对了"，真正能让引擎看见的是**产物那个 json**。
+        {
+            var md = MainForm.Scratch("selftest-brace-e2e-" + Guid.NewGuid().ToString("N")[..8]);
+            Directory.CreateDirectory(md);
+            const string btag = "fixture-brace";
+            var storePath = MainForm.ModelParamsPath();
+            var storeBefore = File.Exists(storePath) ? File.ReadAllText(storePath) : null;
+            try
+            {
+                File.WriteAllText(Path.Combine(md, "strata-" + btag + ".json"),
+                    "{\"model_name\":\"m\",\"args\":[\"--max-context\",\"131072\",\"--spec\",\"4\",\"--pack\",\"m.gguf\"]}");
+                Directory.CreateDirectory(MainForm.RunConfigDir());
+                // 手写进段里（不用 WriteArgsBlockForTest —— 那条走的是 ArgsN 写侧，这里要的正是"他手打的那些行"）
+                File.WriteAllText(storePath,
+                    "[" + btag + "]\nContext=131072\n{resident-budget-gib = 48}\n{pool-workers = 15}\n{spec = 8}\n",
+                    new UTF8Encoding(false));
+                var bs = new Settings
+                {
+                    Root = md, Model = btag, Port = "8080", Host = "127.0.0.1", Context = "131072",
+                    Spec = "4", SpecMinP = "0.5", ExpertCache = "auto", Prefill = "auto",
+                    Vision = "none", VramReserveMib = "700",
+                };
+                var bNotes = new List<string>();
+                if (MainForm.BuildEffectiveConfig(bs, out var bEff, out var bErr, bNotes))
+                {
+                    var ba = BaseArgs(bEff);
+                    Check("C 判据6a 端到端：段里手写的 {resident-budget-gib = 48} / {pool-workers = 15} 真进了产物（引擎实读那一份）",
+                        Value(ba, "--resident-budget-gib") == "48" && Value(ba, "--pool-workers") == "15",
+                        string.Join(" ", ba));
+                    Check("C 判据6b 端到端：花括号写的壳接管键（{spec = 8}）同样不算数，界面值 4 只出现一次",
+                        Value(ba, "--spec") == "4" && ba.Count(x => x == "--spec") == 1,
+                        "--spec=" + (Value(ba, "--spec") ?? "无"));
+                    Check("C 判据6c 端到端：花括号块本身不会被当成参数塞进产物（产物里不许出现带花括号的 token）",
+                        !ba.Any(x => x.Contains('{') || x.Contains('}')),
+                        string.Join(" ", ba.Where(x => x.Contains('{') || x.Contains('}'))));
+                }
+                else Check("C 判据6 花括号端到端物化成功", false, bErr);
+            }
+            finally
+            {
+                try
+                {
+                    if (storeBefore is null) { if (File.Exists(storePath)) File.Delete(storePath); }
+                    else File.WriteAllText(storePath, storeBefore);
+                }
+                catch { /* 清不掉不影响结论 */ }
+                try { File.Delete(MainForm.EffectiveConfigPath(btag)); } catch { }
+                try { Directory.Delete(md, true); } catch { }
             }
         }
     }

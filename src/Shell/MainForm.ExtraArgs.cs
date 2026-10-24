@@ -65,12 +65,21 @@ public partial class MainForm
     /// <summary>方案 §4.1 的合并：按 flag 名合并，同名原位替换、新 flag 追加、裸值追加并告警。
     /// <paramref name="warnings"/> 是**追加**用的（调用方给一份，读/合并两段往里写同一份，日志只需照单全打）；
     /// <paramref name="ignored"/> = 因"壳接管"被丢弃的条数（来源摘要那句要报的数）。
-    /// <paramref name="overlayName"/> 只用于告警文案（给文件名，不给全路径 —— 那句是给人看的）。</summary>
+    /// <paramref name="overlayName"/> 只用于告警文案（给文件名，不给全路径 —— 那句是给人看的）。
+    ///
+    /// 2026-10-24 他点的两件（同一处改动，两条消息）：
+    ///   · **甲**：手加键的 flag 名在模板 args 里一个都没有 → 提示一句。**这不是白名单**（壳不知道引擎有哪些参数，
+    ///     实测 --help 都不全），只是「拼错 / 上游改名 / 拿错了模板」的信号 —— 多一个能让人早看见的字。
+    ///   · **覆盖出声**：手加键把模板里同名的值改掉了 → 点名「模板原来是 X、现在按 Y 走」，值相同则不出声（不制造噪声）。
+    ///   · 两条都**按 flag 去重**（2026-10-24 他点「同一段同一条只报一次」）：同一段里同一个 flag 写了两遍，
+    ///     只提示一条 —— 那是同一件事，重复打两遍只会把日志淹掉。</summary>
     internal static List<string> MergeExtraArgs(IReadOnlyList<string> templateArgs, IReadOnlyList<string> extraArgs,
                                                string overlayName, List<string> warnings, out int ignored)
     {
         ignored = 0;
         var merged = ParseArgEntries(templateArgs);
+        var reported = new HashSet<string>(StringComparer.Ordinal);   // 已经报过的那几条 flag（同一段只报一次）
+        var handAdded = new HashSet<string>(StringComparer.Ordinal);  // 由手加键追加进来的 flag（它们覆盖自己不算「覆盖模板」）
         foreach (var e in ParseArgEntries(extraArgs))
         {
             // 规则：裸值（位置参数）照样追加，但要告警 —— args 里裸值的含义由引擎自己定，壳不担保
@@ -88,13 +97,33 @@ public partial class MainForm
                 continue;
             }
             int at = merged.FindIndex(m => m.Flag == e.Flag);
-            if (at < 0) { merged.Add(e); continue; }     // 模板没有 → 追加尾部
-            merged[at] = e;                              // 模板有 → 原位替换（保住模板顺序）
+            if (at < 0)
+            {
+                // 模板里没有这个 flag → 追加尾部，并且出声（甲）：拼错时这是唯一的信号
+                merged.Add(e);
+                handAdded.Add(e.Flag);
+                if (reported.Add(e.Flag))
+                    warnings.Add($"{e.Flag} 模板里没有这一项，按手加键追加到参数末尾（拼错名字的话引擎会拒绝启动，日志里看得到）");
+                continue;
+            }
+            // 模板有 → 原位替换（保住模板顺序）；值真改了才出声（覆盖出声），相同则静默
+            var was = merged[at];
+            merged[at] = e;
+            // 手加键自己写了第二遍（覆盖的是自己刚追加的那条）不算「覆盖模板里的值」，也别再报一次
+            if (!handAdded.Contains(e.Flag) && !ArgValueSame(was, e) && reported.Add(e.Flag))
+                warnings.Add($"{e.Flag} 覆盖了模板里的值：{ArgValueText(was)} → {ArgValueText(e)}（来源：{overlayName}）");
             // 模板自己重复写了同一个 flag 时也收成一条：合并结果里同一 flag 只许出现一次（方案 C6）
             for (int i = merged.Count - 1; i > at; i--) if (merged[i].Flag == e.Flag) merged.RemoveAt(i);
         }
         return FlattenArgEntries(merged);
     }
+
+    /// <summary>两个条目算不算"值相同"（无值 flag 的 Value 是 null，两个 null 也算相同）。</summary>
+    static bool ArgValueSame(ArgEntry a, ArgEntry b) =>
+        string.Equals(a.Value ?? "", b.Value ?? "", StringComparison.Ordinal);
+
+    /// <summary>告警文案里的值：无值 flag 写成「（无值开关）」，免得日志里出现「→ 」这种半截话。</summary>
+    static string ArgValueText(ArgEntry e) => e.Value is null ? "（无值开关）" : $"「{e.Value}」";
 
     /// <summary>读一份覆盖层（方案 §4.2 / 只认 args：2026-10-22 他拍）。
     /// 任何结构问题 = **整份按空处理** + 一条告警点名路径与原因，绝不半份生效、绝不抛、绝不阻断启动。
@@ -143,8 +172,29 @@ public partial class MainForm
         return list;
     }
 
-    /// <summary>某个模型的手加参数从哪儿读（2026-10-22 第三版，DEC-210）：`strata_models.ini` 里该段的
-    /// `Args1`/`Args2`… 行，按序号拼回一串 token。段不在 / 没写 = 空（静默）。
+    /// <summary>段里那些"写了但没有任何消费者"的键点名（DEC-219 §5 第 5 条）。
+    /// 目前认四种：16 格（界面键）、`ArgsN`、花括号块、注释。别的一律告警 —— 因为写回纪律①保证
+    /// "不认识的键一行不动"，所以它**不会报错、也不会生效**，只会静默留存在文件里（正是要防的那一类）。</summary>
+    static void WarnUnknownModelKeys(ModelParamsIni.Section sec, List<string> warnings)
+    {
+        foreach (var line in sec.Body)
+        {
+            var k = ModelParamsIni.KeyOf(line);
+            if (k is null) continue;                                  // 空行 / 注释 / 段头
+            if (k.StartsWith("{", StringComparison.Ordinal)) continue; // 花括号块（ReadBraceArgs 那一支管）
+            if (k.Length > ModelParamsIni.ArgsKeyPrefix.Length
+                && k.StartsWith(ModelParamsIni.ArgsKeyPrefix, StringComparison.OrdinalIgnoreCase)
+                && int.TryParse(k[ModelParamsIni.ArgsKeyPrefix.Length..], out _)) continue;   // ArgsN
+            if (ModelOwnedKeys.Contains(k, StringComparer.OrdinalIgnoreCase)) continue;       // 16 格
+            warnings.Add($"[{sec.Name}] 这一行写着「{k} = ...」，但它既不是界面上那 16 格、也不是 "
+                       + $"{ModelParamsIni.ArgsKeyPrefix}N、也不是花括号块 —— 壳不认这个键，它不会生效也不会报错（写回时会原样留着）");
+        }
+    }
+
+    /// <summary>某个模型的手加参数从哪儿读（2026-10-22 第三版，DEC-210；2026-10-24 DEC-219 加第二种写法）：
+    /// `strata_models.ini` 里该段的 `Args1`/`Args2`… 行（一行一个 token，按序号），以及
+    /// `{参数名 = 值}` 行（一行一块，摊成 `--参数名` + `值`）。两种拼成一条线性序列：`ArgsN` 在前、花括号在后。
+    /// 段不在 / 没写 = 空（静默）。
     /// 老形态（DEC-207 的 `strata_models.json`、C 那版的 `<tag>.extra.json`）还在时也照读 ——
     /// 迁移之前那一趟要能用，迁移完就被并进 `ArgsN` 并挪走。</summary>
     internal static List<string> ReadExtraArgsForTag(string tag, List<string> warnings)
@@ -157,7 +207,11 @@ public partial class MainForm
             try { text = File.ReadAllText(path); }
             catch (Exception ex) { warnings.Add($"{ModelParamsFileName} 读不动（{ex.Message}），这一层按没有处理"); return empty; }
             var sec = ModelParamsIni.Parse(text).Find(tag);
-            return sec is null ? empty : ModelParamsIni.ReadArgs(sec);        // 这一段没有 = 没有手加参数
+            if (sec is null) return empty;                                    // 这一段没有 = 没有手加参数
+            WarnUnknownModelKeys(sec, warnings);                              // 写了但不生效的键要点名，别静默
+            var args = ModelParamsIni.ReadArgs(sec);
+            args.AddRange(ModelParamsIni.ReadBraceArgs(sec, warnings));       // 第二种写法：一行一块（DEC-219）
+            return args;
         }
         // 迁移还没跑（老的 json 还在）：照读，别让手加参数在升级那一趟丢一次
         var legacyJson = LegacyModelParamsPath();

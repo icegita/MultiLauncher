@@ -442,5 +442,134 @@ internal static partial class SelfTest
                 catch { /* 清不掉不影响结论 */ }
             }
         }
+
+        // --- 判据 13（DEC-219，2026-10-24 他点的「统一写法」）：`{参数名 = 值}` 第二种手加参数 ——
+        //     读侧摊成两个 token、写回纪律①扩到花括号行、坏块点名、裸写不生效也要点名 ---
+        {
+            // 13a：纯函数层 —— 一行一块摊成 `--名字` + `值`；无值开关只出一个 token；值里带空格不串
+            {
+                var docB = ModelParamsIni.Parse("[b]\n{resident-budget-gib = 48}\n{pool-workers = 15}\n{vision}\n{--spec = 8}\n{note-flag = a value with space}\n");
+                var wB = new List<string>();
+                var gotB = ModelParamsIni.ReadBraceArgs(docB.Find("b")!, wB);
+                var wantB = new[] { "--resident-budget-gib", "48", "--pool-workers", "15", "--vision", "--spec", "8", "--note-flag", "a value with space" };
+                Check("A 判据13a 花括号写法一行一块：摊成 --名字 + 值（无值开关只出 flag；值里带空格不串；名字带不带 -- 都行）",
+                    gotB.SequenceEqual(wantB) && wB.Count == 0, string.Join(" ", gotB) + "｜告警 " + wB.Count + " 条");
+            }
+
+            // 13b：跨行块不认 —— `{` 单起一行 / `}` 另起一行，一个 token 都不出，且点名说了跨行不认
+            {
+                var docC = ModelParamsIni.Parse("[b2]\n{\nresident-budget-gib = 48\n}\n");
+                var wC = new List<string>();
+                var gotC = ModelParamsIni.ReadBraceArgs(docC.Find("b2")!, wC);
+                Check("A 判据13b 跨行块不认（`{` 单起一行 / `}` 另起一行）：不静默兼容、一个 token 都不出，且点名说了跨行不认",
+                    gotC.Count == 0 && wC.Count >= 1 && wC.Any(x => x.Contains("一行一块")),
+                    "token=" + gotC.Count + "｜" + string.Join(" ⏎ ", wC));
+            }
+
+            // 13c/13d/13e 共用一份改道后的临时家底（真配置一个字节不碰，收尾还原）
+            var bracePath = MainForm.ModelParamsPath();
+            var braceBefore = File.Exists(bracePath) ? File.ReadAllText(bracePath) : null;
+            try
+            {
+                Directory.CreateDirectory(MainForm.RunConfigDir());
+
+                // 13c：写回纪律 —— 壳保存那 16 格时，花括号行逐字、原位不动（和 8e 的 ArgsN 同一把尺）
+                const string keepTag = "brace-keep";
+                File.WriteAllText(bracePath,
+                    "[" + keepTag + "]\nContext=131072\n{resident-budget-gib = 48}\n{pool-workers = 15}\n",
+                    new UTF8Encoding(false));
+                var keepSnap = MainForm.SnapshotModelFields(new Settings { Context = "131072" });
+                keepSnap.Context = "196608";
+                MainForm.SaveModelSnapStore(new Dictionary<string, Settings>(StringComparer.OrdinalIgnoreCase) { [keepTag] = keepSnap }, out _, out _);
+                var keepSec = ModelParamsIni.Parse(File.ReadAllText(bracePath)).Find(keepTag);
+                var braceLines = keepSec?.Body.Where(l => l.TrimStart().StartsWith('{')).ToList() ?? new List<string>();
+                Check("A 判据13c 壳保存那 16 格时，花括号行逐字原位不动（写回纪律①扩到花括号行）",
+                    keepSec is not null
+                    && braceLines.SequenceEqual(new[] { "{resident-budget-gib = 48}", "{pool-workers = 15}" })
+                    && ModelParamsIni.TryGet(keepSec, "Context", out var ctxB2) && ctxB2 == "196608"
+                    && ModelParamsIni.ReadBraceArgs(keepSec, new List<string>()).SequenceEqual(new[] { "--resident-budget-gib", "48", "--pool-workers", "15" }),
+                    keepSec is null ? "没有这一段" : string.Join(" / ", keepSec.Body));
+
+                // 13d：合流层 —— ArgsN 在前、花括号在后；壳接管的 {spec = 8} 被丢掉并点名
+                const string readTag = "brace-read";
+                File.WriteAllText(bracePath,
+                    "[" + readTag + "]\nContext=131072\nArgs1=--fake-flag\nArgs2=1\n{resident-budget-gib = 48}\n{spec = 8}\n",
+                    new UTF8Encoding(false));
+                var rdNotes = new List<string>();
+                var rdToks = MainForm.ReadExtraArgsForTag(readTag, rdNotes);
+                var rdTpl = new List<string> { "--pack", "m.gguf", "--spec", "4" };
+                var rdMerged = MainForm.MergeExtraArgs(rdTpl, rdToks,
+                    MainForm.ModelParamsFileName + " 的 args 块（" + readTag + "）", rdNotes, out var rdIgnored);
+                Check("A 判据13d 花括号行读得出来：ArgsN 在前、花括号在后拼成一条序列；壳接管的 {spec = 8} 被丢掉并点名",
+                    rdToks.SequenceEqual(new[] { "--fake-flag", "1", "--resident-budget-gib", "48", "--spec", "8" })
+                    && rdIgnored == 1
+                    && rdMerged.Count(x => x == "--spec") == 1
+                    && Value(rdMerged, "--spec") == "4"
+                    && Value(rdMerged, "--resident-budget-gib") == "48"
+                    && rdNotes.Any(x => x.Contains("--spec") && x.Contains("界面接管")),
+                    "token=" + string.Join(" ", rdToks) + "｜忽略 " + rdIgnored + " 条｜" + string.Join(" ⏎ ", rdNotes));
+
+                // 13e：裸写 `resident-budget-gib=48`（不带花括号）不生效 —— 不出 token，但必须点名说「壳不认这个键」
+                const string bareTag = "brace-bare";
+                File.WriteAllText(bracePath,
+                    "[" + bareTag + "]\nContext=131072\nresident-budget-gib=48\n",
+                    new UTF8Encoding(false));
+                var bareNotes = new List<string>();
+                var bareToks = MainForm.ReadExtraArgsForTag(bareTag, bareNotes);
+                Check("A 判据13e 裸写 resident-budget-gib=48（不带花括号）不生效：不出 token，但要点名「壳不认这个键」",
+                    bareToks.Count == 0
+                    && bareNotes.Any(x => x.Contains("resident-budget-gib") && x.Contains("壳不认这个键")),
+                    string.Join(" ⏎ ", bareNotes));
+            }
+            finally
+            {
+                MainForm.ResetModelParamsStampForTest();
+                try
+                {
+                    if (braceBefore is null) { if (File.Exists(bracePath)) File.Delete(bracePath); }
+                    else File.WriteAllText(bracePath, braceBefore);
+                }
+                catch { /* 清不掉不影响结论 */ }
+            }
+        }
+
+        // --- 判据 14（DEC-220，2026-10-24 他点「VramReserveMib = 1600，弄成这种，= 号两边加上空格」）：
+        //     写侧改成 `Key = Value`；读侧照旧容忍老的无空格行（老文件不改也读得动，壳写一次那几格才转格式）---
+        {
+            var fmtDoc = new ModelParamsIni.Doc();
+            ModelParamsIni.SetKeys(fmtDoc, "fmt-a", new[]
+            {
+                new KeyValuePair<string, string>("Context", "131072"),
+                new KeyValuePair<string, string>("VramReserveMib", "1600"),
+                new KeyValuePair<string, string>("LayerSplit", ""),
+            });
+            ModelParamsIni.WriteArgs(fmtDoc, "fmt-a", new[] { "--hand-flag", "3" });
+            var fmtText = ModelParamsIni.Text(fmtDoc);
+            var fmtLines = fmtText.Split("\r\n");
+            var fmtSec = ModelParamsIni.Parse(fmtText).Find("fmt-a");
+            Check("A 判据14a 写侧：16 格与 ArgsN 都写成「Key = Value」（等号两边各一个空格；空值行写成「 = 」且不带尾随空格）",
+                fmtLines.Contains("[fmt-a]")
+                && fmtLines.Contains("Context = 131072")
+                && fmtLines.Contains("VramReserveMib = 1600")
+                && fmtLines.Contains("LayerSplit =")
+                && fmtLines.Contains("Args1 = --hand-flag")
+                && fmtLines.Contains("Args2 = 3")
+                && fmtSec is not null
+                && ModelParamsIni.TryGet(fmtSec, "Context", out var fctx) && fctx == "131072"
+                && ModelParamsIni.ReadArgs(fmtSec).SequenceEqual(new[] { "--hand-flag", "3" }),
+                string.Join(" / ", fmtLines.Where(l => l.Length > 0)));
+
+            // 14b：老的无空格行照读；壳只动它自己写的那些格 —— 别的行（你写的 ArgsN、注释）一个字都不碰
+            const string fmtOldTag = "fmt-old";
+            var fmtOldDoc = ModelParamsIni.Parse("[" + fmtOldTag + "]\nContext=131072\nVramReserveMib=1600\nArgs1=--fake-flag\n; 我自己的注释\n");
+            ModelParamsIni.SetKeys(fmtOldDoc, fmtOldTag, new[] { new KeyValuePair<string, string>("Context", "196608") });
+            var fmtOldLines = ModelParamsIni.Text(fmtOldDoc).Split("\r\n");
+            Check("A 判据14b 读侧不挑格式：老的无空格行照读；保存后只动壳自己写的那一格（转成 Key = Value），ArgsN 与注释原样",
+                fmtOldLines.Contains("Context = 196608")
+                && fmtOldLines.Contains("VramReserveMib=1600")
+                && fmtOldLines.Contains("Args1=--fake-flag")
+                && fmtOldLines.Contains("; 我自己的注释"),
+                string.Join(" / ", fmtOldLines.Where(l => l.Length > 0)));
+        }
     }
 }
