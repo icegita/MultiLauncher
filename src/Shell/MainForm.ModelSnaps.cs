@@ -187,12 +187,18 @@ public partial class MainForm
             foreach (var kv in snaps.OrderBy(k => k.Key, StringComparer.OrdinalIgnoreCase))
             {
                 var pairs = new List<KeyValuePair<string, string>>();
+                var blanks = new List<string>();
                 foreach (var p in ModelOwnedProps)
                 {
                     var v = p.GetValue(kv.Value);
-                    pairs.Add(new(p.Name, p.PropertyType == typeof(bool) ? ((bool?)v ?? false ? "true" : "false") : (string?)v ?? ""));
+                    var cell = p.PropertyType == typeof(bool) ? ((bool?)v ?? false ? "true" : "false") : (string?)v ?? "";
+                    // DEC-221：出厂默认就是空串的那几格，值为空时整行不写（读侧缺键 = 用默认，等价）。
+                    // 顺手把以前留下的空值行删掉 —— 只「不写」不「删」的话，老文件里的空行会一直赖着不走。
+                    if (cell.Length == 0 && EmptyByDefaultKeys.Contains(p.Name)) { blanks.Add(p.Name); continue; }
+                    pairs.Add(new(p.Name, cell));
                 }
                 ModelParamsIni.SetKeys(doc, kv.Key, pairs);
+                ModelParamsIni.RemoveKeys(doc, kv.Key, blanks);
             }
             var text = ModelParamsIni.Text(doc);
             if (File.Exists(path) && File.ReadAllText(path) == text) return true;      // 已经在盘上 = 不动它

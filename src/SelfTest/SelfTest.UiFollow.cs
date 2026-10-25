@@ -30,11 +30,18 @@ internal static partial class SelfTest
                     string.Join(" ｜ ", advAlign.Select(a => $"{a.Name}={a.SwMinusLabel}/{a.SwMinusBand}/{a.LabelMinusBand}")));
                 // ============ DEC-098③：换两次后端再读一遍高级区，格子名字不能丢 ============
                 // 用户实跑："高级里,大量参数没有参数名称"。根因 = AdvLayout 把不出面的格子（控件 + 标签）挪去 -2000
-                // 并设 Visible=false，而回到明面上时**只把控件设回 true、标签漏了**。两侧都启用时这一条才走得到
-                //（开发目录那份是他的真实配置，NinferWslOn=True）；只启用一侧时两次交换都是空操作，
-                // 这条退化成"当前出面的格子都带名字"，仍然有效。
+                // 并设 Visible=false，而回到明面上时**只把控件设回 true、标签漏了**。
+                // DEC-222 补（治一条长期既有红）：这两条判据的前提是**方块有两枚面**（两侧都启用），否则
+                // `NextNinferBackend` 返回空串、`OnNinferBackendSwap` 当场 return = 换后端是空操作，
+                // "换过两次"根本没发生。而 `Settings.NinferWslOn` 出厂默认 false（开着每次启动要 `wsl.exe find`
+                // 会把 VM 拉起来 = 动他机器全局状态），于是**这条判据的红绿被他 ini 里那一枚开关决定**——
+                // 本机自检目录没有 MultiLauncher.ini 时就恒红（BUG-052 同族：用户机器上恰好是什么配置不该决定用例红绿）。
+                // 修法照 DEC-126「走真路径先喂样本」：把两侧钉成启用再测，测完还原（只改内存，不写他那份 ini）。
                 {
                     var backendBak = uiForm.NinferBackendForTest;
+                    var winOnBak = uiForm.NinferBackendOnForTest(NinferIni.BackendWin);
+                    var wslOnBak = uiForm.NinferBackendOnForTest(NinferIni.BackendWsl);
+                    uiForm.SetNinferBackendsForTest(winOn: true, wslOn: true);   // 喂样本：先把两枚面造出来
                     uiForm.SwitchModuleForTest("ninfer");
                     // 判据用「在不在画外」而不是 Visible：无头跑时控件的 Visible 是含祖先的有效可见性，
                     // 整棵树一律报 false —— 这条自检第一版就是拿它当判据，结果成了一条永真的空判据（假绿）。
@@ -69,7 +76,11 @@ internal static partial class SelfTest
                             + "｜后端 " + backendBak + "→" + uiForm.NinferBackendForTest
                             + "｜丢了名字的：" + string.Join("、", lostNames));
                     }
-                    finally { MainForm.UseTempConfigForTest(iniReal3); }
+                    finally
+                    {
+                        MainForm.UseTempConfigForTest(iniReal3);
+                        uiForm.SetNinferBackendsForTest(winOnBak, wslOnBak);   // 还原他 ini 里那两枚开关（只改内存）
+                    }
                     uiForm.SwitchModuleForTest("strata");
                 }
                 // ============ DEC-100①b：卡3「加载/卸载」与「启动」都按模块表派发 ============

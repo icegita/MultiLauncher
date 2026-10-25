@@ -244,6 +244,9 @@ public partial class MainForm
         // DEC-211：点「启动」这一下就先把被手改过的参数重读进来（路由模式下只立网关、不走 StartService，
         // 但界面卡与内存字典得先跟文件对上 —— 等第一个请求真加载模型时用的就是重读后的这份）。
         ReloadModelParamsFromDiskIfChanged(_config.Current.Model);
+        // DEC-222：家底被增删过 → 只重扫 Strata 这一份列表并重摆下拉（路由模式这一支也要覆盖：
+        // 他点「停止」再「启动」在路由模式下走的正是这里，见 DEC-211 那条同族注释）。
+        RescanModelsIfHomeChanged(StrataKey);
         // Strata 的路由模式：只把网关立起来，模型等第一个 /v1 请求再加载（B 段：模式按模块各自记忆）
         if (_routeModeStrata)
         {
@@ -284,11 +287,17 @@ public partial class MainForm
         }
         // DEC-211：拉起前先把被手改过的参数重读进来（这条路径也覆盖网关唤醒 / 切件）
         ReloadModelParamsFromDiskIfChanged(tag);
+        // DEC-222：列表也要跟上 —— 要起的那一件可能刚从家底里被删掉。这一步必须在下面 `_models.Find` 之前，
+        // 否则删掉的那件还会被找出来、一路走到建命令行（他报的「重启服务列表还是旧的那件」就是这个形状）。
+        RescanModelsIfHomeChanged(StrataKey);
         var s = StartSettingsFor(tag, openBrowser, wakeFromRecord);
         var entry = _models.Find(m => m.Tag == tag);
         if (entry is null)
         {
-            error = "还没有模型可选：请先在「模型」里选一个，或用「配置新模型」跑一次 SETUP。";
+            // DEC-222：列表刚按文件重扫过 —— 这时「一件都没有」与「你指的那件没了」是两回事，话要分清。
+            error = _models.Count == 0
+                ? "还没有模型可选：请先在「模型」里选一个，或用「配置新模型」跑一次 SETUP。"
+                : $"模型 {tag} 的配置已经删掉，列表已按文件更新，请重新选一件。";
             return false;
         }
         if (!entry.Ready)

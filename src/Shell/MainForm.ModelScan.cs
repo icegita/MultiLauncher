@@ -80,11 +80,14 @@ public partial class MainForm
     }
 
     // 重扫模型目录 + 解析 llama.cpp ini，并刷新下拉、提示行、高级区。
-    // 允许的调用点就这几处（别再加，尤其别加在下拉展开或服务启停/网关启停上 —— 那会白扫一遍还刷一屏日志）：
+    // **全量重扫**的调用点就这几处（别再加，尤其别加在下拉展开或服务启停/网关启停上 —— 那会白扫一遍还刷一屏日志）：
     //   · 外壳启动（MainForm 构造）
     //   · SETUP 窗口关闭（RunSetup 挂的 Exited）、升级完成（MainForm.Update.cs）
     //   · 设置页改了 Strata 目录 / llama_models.ini / 模块开关（Program.cs）
-    // 2026-10-02（DEC-033）：服务启停不再重扫——那两个时点模型列表不会变，扫了只有噪音。
+    // 2026-10-02（DEC-033）：服务启停不【全量】重扫——那两个时点列表多半没变，扫了只有噪音。
+    // 2026-10-25（DEC-222）：但「删掉某模型的配置段 → 停止再启动」确实会让列表变，所以启停那一刻补了一条
+    // **带戳的窄路径**：只重扫那一个模块的列表 + 重摆下拉，不碰本函数尾部那三段、也不打扫描行 ——
+    // 走 RescanModelsIfHomeChanged（MainForm.ModelRescan.cs），别在启停处直接调本函数。
     void RefreshModels() => RefreshModels(null);
 
     /// <summary>DEC-097⑤：<c>onlyKey</c> = 只有那一个模块的家底变了（Ninfer 切后端 / 某一侧恢复备份 / 某一侧升级完成）。
@@ -163,6 +166,12 @@ public partial class MainForm
         RefreshModuleScopedUi();    // 页头分段 / 卡2 / 卡3（含选中恢复）/ 左栏 / 状态灯（B 段整块视图）
         OnModelChanged();
         RefreshStatusUi();
+
+        // DEC-222：这一趟刚按文件扫过，把**列表戳**记成最新 —— 之后拉起服务时"文件真变了才重扫"。
+        // 只记本轮真扫过的模块（DEC-097⑤ 的作用域口径照旧）；与参数戳分开记，见 MainForm.ModelRescan.cs 那个文件头。
+        if (wantStrata) _strataListStamp = StrataListStamp();
+        if (wantLlama) _llamaListStamp = LlamaListStamp();
+        if (wantNinfer) _ninferListStamp = NinferListStamp();
     }
 
     ModelEntry? SelectedModel() => _cboModel.Selected?.Tag as ModelEntry;

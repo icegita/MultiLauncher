@@ -205,6 +205,8 @@ internal static partial class SelfTest
             Seg("物化与旋钮", MaterializeAndKnobs);
             Seg("模型参数文件", ModelSnapFileChecks);   // A（DEC-206/210）：[Model:*] 那一族的家搬到 strata_models.ini 之后的迁移、往返、命名
 
+            Seg("模型列表重扫", ModelRescanChecks);     // DEC-222：拉起服务那一刻按家底戳重扫三个模块的模型列表
+
             Seg("界面布局", UiLayoutChecks);
 
             Seg("本程序更新", AppUpdateChecks);      // DEC-202：第 4 条链（本程序自更新）那一族 —— 纯函数喂样本，一次都不联网

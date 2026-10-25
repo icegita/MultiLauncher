@@ -60,8 +60,10 @@ internal static partial class SelfTest
                 // 纠正为「0.1.8.4」—— 本项目的"小版本号"= 末位（与 DEC-182 那次改判同一口径）。
                 // DEC-219/220（2026-10-25）：花括号手加键写法 + 手加键日志出声 + ini 键值行「Key = Value」，
                 // 全是读侧与外观收口、没有新功能 → 按 DEC-110 只升末位（0.1.8.6 → 0.1.8.7）。
-                Check("版本号 = v0.1.8.7（csproj 0.1.8.7；花括号手加键与 ini 键值行格式那批，按末位）",
-                    MainForm.VersionTag() == "v0.1.8.7", MainForm.VersionTag());
+                // DEC-222（2026-10-25）：模型列表增删的缺口补齐（拉起服务那一刻按列表戳重扫，三模块同形）
+                // + 顺带修掉 DEC-103 / DEC-098③ 两条既有红 —— 同样是修复性批次 → 再升末位（0.1.8.7 → 0.1.8.8）。
+                Check("版本号 = v0.1.8.8（csproj 0.1.8.8；模型列表重扫 + 两条既有红那批，按末位）",
+                    MainForm.VersionTag() == "v0.1.8.8", MainForm.VersionTag());
                 Check("版本显示不吃进提交号与空白（InformationalVersion 形如 0.1.8.3+<sha>，'+' 之后必须切干净）",
                     !MainForm.VersionTag().Contains('+') && !MainForm.VersionTag().Contains(' '), MainForm.VersionTag());
                 // DEC-180 的机器版护栏：csproj 里**只许有一个** `<Version>` 真标签。这个坑本仓库栽过两次 ——
@@ -182,16 +184,25 @@ internal static partial class SelfTest
                     };
                     var stillInCurrent = File.ReadLines(iniTmp)
                         .TakeWhile(l => !l.Trim().StartsWith("[" + snapSec + "]"))     // 只看 [Current] 那一层（到本段之前）
-                        .Select(l => l.Trim().Split('=')[0])
+                        .Select(l => l.Trim().Split('=')[0].TrimEnd())                 // 「Key = Value」切出来的键带一个尾空格，得削掉
                         .Intersect(sixteen).ToList();
                     Check("DEC-122③ 点过一次「保存」之后，[Current] 里这 16 行一条都不再写出（重复副本退役）",
                         stillInCurrent.Count == 0, "还在 [Current] 里：" + string.Join("、", stillInCurrent));
-                    var missingInRecord = sixteen.Where(k => uiForm.ValueInIniForTest(k, snapSec) == "<没有这一行>").ToList();
-                    Check("DEC-122③ 记录那一段照旧把这 16 格全装上（值由记录承接 = 用户无感；Model= 选中指针不在名单里）",
-                        missingInRecord.Count == 0 && MainForm.ModelOwnedKeys.SequenceEqual(sixteen)
+                    // DEC-221（2026-10-25 他点「像这种空白值的参数，是不是不应该显示在配置文件里」）：
+                    // 出厂默认就是空串的那 6 格，值为空时整行不写（读侧缺键 = 用默认，等价）。
+                    // 所以这条判据从「16 格全在」改成「默认非空的 10 格必须在 + 默认空的 6 格要么不在、要么值非空」。
+                    var mustHave = sixteen.Where(k => !MainForm.EmptyByDefaultKeys.Contains(k)).ToList();
+                    var mayBeMissing = sixteen.Where(k => MainForm.EmptyByDefaultKeys.Contains(k)).ToList();
+                    var missingInRecord = mustHave.Where(k => uiForm.ValueInIniForTest(k, snapSec) == "<没有这一行>").ToList();
+                    var blankInRecord = mayBeMissing
+                        .Where(k => uiForm.ValueInIniForTest(k, snapSec) is { } v && v != "<没有这一行>" && v.Length == 0).ToList();
+                    Check("DEC-122③ + DEC-221 记录那一段：默认非空的 10 格照旧全装上，默认空的 6 格（ApiModel/Gpu/LayerSplit/ArenaPinGib/ExtraArgs/ReasoningEffort）值为空就不写行（Model= 选中指针不在名单里）",
+                        mustHave.Count == 10 && mayBeMissing.Count == 6
+                        && missingInRecord.Count == 0 && blankInRecord.Count == 0
+                        && MainForm.ModelOwnedKeys.SequenceEqual(sixteen)
                         && MainForm.RetiredCurrentKeys.Contains(nameof(Settings.Context))
                         && !MainForm.RetiredCurrentKeys.Contains(nameof(Settings.Model)),
-                        "段里缺的：" + string.Join("、", missingInRecord));
+                        "段里缺的：" + string.Join("、", missingInRecord) + " ｜空值行还在：" + string.Join("、", blankInRecord));
                     Check("DEC-122③ 端口 / 监听地址这类不跟模型走的键照旧落 [Current]（不许顺手一起清掉）",
                         uiForm.CurrentValueInIniForTest("Port") != "<没有这一行>"
                         && uiForm.CurrentValueInIniForTest("Host") != "<没有这一行>",

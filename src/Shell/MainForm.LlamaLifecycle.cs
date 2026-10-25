@@ -17,6 +17,9 @@ public partial class MainForm
         // DEC-212（2026-10-22，他报"改完 ini 重启服务界面不更新"）：拉起之前先看家底文件有没有被人改过 ——
         // 改过就按当前选中的段重读一遍并推界面（`CollectSettings()` 取的是界面卡，卡不更新 = 起的还是老配置）。
         ReloadLlamaRecordIfIniChanged();
+        // DEC-222：家底被增删过（删掉某一段 / 新加一段）→ 只重扫 llama 这一份列表并重摆下拉。
+        // 与上面那句分工：那句管**参数**（按选中的段重读界面卡），这句管**列表本身**；戳没变就一个字节都不读。
+        RescanModelsIfHomeChanged(LlamaKey);
         // 模块开关（B 段地基，DEC-024）：停用的模块不起进程（全隐身）
         if (!ModuleRegistry.LlamaEnabled(_config.Current))
         {

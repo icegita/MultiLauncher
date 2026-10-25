@@ -102,6 +102,9 @@ public partial class MainForm
     void StartNinferServer(string? tagOverride, bool wakeFromSection, string? gpuVerdict = null, bool gpuProbed = false)
     {
         if (NinferRunning) return;
+        // DEC-222：家底被增删过（删掉某一段）→ 只重扫 Ninfer 这一份列表并重摆下拉。
+        // 排在干跑开关之前：自检走的就是这条真入口，戳门自己会把「没变」那档挡掉。
+        RescanModelsIfHomeChanged(NinferKey);
         // DEC-159（他批的第 1 条）：每一次"起不来"都先把那句话记下来 —— 手动那一击拿去弹框，
         // 唤醒那一击拿去回客户端（同一个家，不许两条路各编一句）。
         NinferStartFailure = null;
@@ -422,6 +425,8 @@ public partial class MainForm
     /// <summary>只立网关。起不来时 `StartGateway` 自己已经弹过窗、写过日志，这里不再补第二句（同义反复）。</summary>
     void StartNinferGateway()
     {
+        // DEC-222：Ninfer 左栏「启动」只立网关、不起引擎 —— 但列表照样要跟上家底（他就在这一档发现列表不更新）。
+        RescanModelsIfHomeChanged(NinferKey);
         StartGateway(ModelEntry.BackendNinfer);
         if (!NinferGatewayUp) return;
         LogN($"$ 网关已就绪（公开端口 {NinferPublicPortValue()}，Ninfer 用内部端口 {NinferInternalPortValue()}）：当前不加载模型，/v1 请求到达时自动加载");

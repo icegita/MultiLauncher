@@ -30,6 +30,12 @@ namespace MultiLauncher;
 ///   ① **只改壳自己那 16 格**：段里的注释、`ArgsN`、你不认识的键，写回时一行都不动；
 ///   ② 键不分大小写（`Context` / `context` 都认），值按第一个 `=` 切（`Args3=--foo=a` 也读得对）；
 ///   ③ 段的先后 = 文件里的先后；新段按 tag 排序插进去（翻起来有章法，不随保存次序跳）。
+///
+/// 空值行不写（DEC-221，2026-10-25 他点「像这种空白值的参数，是不是不应该显示在配置文件里，更整洁一点」）——
+/// 出厂默认就是空串的那几格（`ApiModel` / `Gpu` / `LayerSplit` / `ArenaPinGib` / `ExtraArgs` / `ReasoningEffort`）
+/// 值为空时**整行不写**：读侧「缺键 = 用默认」本来就等价（见 `MainForm.LoadModelSnapStore`），
+/// 而 `llama_models.ini` / `ninfer_models.ini` 里压根没有空值行 —— 这一步做完才算真统一。**默认非空的那 10 格照写**
+/// （留着行 = 留着校验拦截，删了反而会静默回落默认）。这一层只管拼行，取舍在写盘那一层（`SaveModelSnapStore`）。
 internal static class ModelParamsIni
 {
     /// <summary>手加参数的键前缀：`Args1` / `Args2` …（一行一个 token，他选的形态）。</summary>
@@ -156,6 +162,18 @@ internal static class ModelParamsIni
             if (at >= 0) sec.Body[at] = line;
             else sec.Body.Insert(LastKeyLineIndex(sec.Body), line);
         }
+    }
+
+    /// <summary>把若干键的行从这个模型的段里删掉（DEC-221：值为空且出厂默认也空的那几格不写行，
+    /// 写回时要顺手把以前留下的空值行清掉，否则「越保存越脏」）。
+    /// **只删这几个键所在的行** —— 注释、`ArgsN`、不认识的键原样留着。</summary>
+    internal static void RemoveKeys(Doc doc, string tag, IEnumerable<string> keys)
+    {
+        var sec = doc.Find(tag);
+        if (sec is null) return;
+        var names = new HashSet<string>(keys, StringComparer.OrdinalIgnoreCase);
+        if (names.Count == 0) return;
+        sec.Body.RemoveAll(l => KeyOf(l) is { } k && names.Contains(k));
     }
 
     /// <summary>新键的落点 = 最后一个键值行的下一行（尾部若有注释，键排在注释前面）。</summary>

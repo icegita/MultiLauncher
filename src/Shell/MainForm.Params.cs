@@ -335,6 +335,17 @@ public partial class MainForm
     static readonly System.Reflection.PropertyInfo[] ModelOwnedProps =
         ModelOwnedKeys.Select(k => typeof(Settings).GetProperty(k)!).ToArray();
 
+    // DEC-221（2026-10-25 他点「像这种空白值的参数，是不是不应该显示在配置文件里」）：
+    // 出厂默认就是空串的那几格（现在 = ApiModel / Gpu / LayerSplit / ArenaPinGib / ExtraArgs / ReasoningEffort）。
+    // 它们**值为空时不再往 strata_models.ini 里写行** —— 读侧「缺键 = 用默认」（LoadModelSnapStore 里那句 continue）
+    // 本来就等价，而 llama_models.ini / ninfer_models.ini 里压根没有空值行，省掉这几行才算真统一。
+    // 默认非空的那 10 格照写：留着行 = 留着那几条校验拦截（比如上下文 < 1024 会被拦下），删了只会静默回落默认。
+    // 名单是**算出来的**，不是硬编码：以后加格 / 改默认值这里自动跟上。
+    internal static readonly HashSet<string> EmptyByDefaultKeys =
+        ModelOwnedProps.Where(p => p.PropertyType == typeof(string) && (string?)p.GetValue(new Settings()) is { Length: 0 })
+                       .Select(p => p.Name)
+                       .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
     // 只搬模型家底，其余字段一律不碰（端口、模式、另一模块的值都留在原处）
     internal static void ApplyModelFields(Settings from, Settings to)
     {

@@ -551,7 +551,7 @@ internal static partial class SelfTest
                 fmtLines.Contains("[fmt-a]")
                 && fmtLines.Contains("Context = 131072")
                 && fmtLines.Contains("VramReserveMib = 1600")
-                && fmtLines.Contains("LayerSplit =")
+                && fmtLines.Contains("LayerSplit =")     // 拼行这一层照样能写空值行（取舍在写盘那一层，见判据 15）
                 && fmtLines.Contains("Args1 = --hand-flag")
                 && fmtLines.Contains("Args2 = 3")
                 && fmtSec is not null
@@ -570,6 +570,82 @@ internal static partial class SelfTest
                 && fmtOldLines.Contains("Args1=--fake-flag")
                 && fmtOldLines.Contains("; 我自己的注释"),
                 string.Join(" / ", fmtOldLines.Where(l => l.Length > 0)));
+        }
+
+        // --- 判据 15（DEC-221，2026-10-25 他点「像这种空白值的参数，是不是不应该显示在配置文件里，更整洁一点」）：
+        //     写盘那层（SaveModelSnapStore）对「出厂默认就是空串」的 6 格：值为空 → 整行不写，老的空值行顺手删掉；
+        //     默认非空的 10 格照旧照写（留着行 = 留着校验拦截）。真配置一个字节不碰（改道临时家底 + 收尾还原）---
+        {
+            Check("A 判据15a 默认即空的名单是算出来的 6 格（ApiModel/Gpu/LayerSplit/ArenaPinGib/ExtraArgs/ReasoningEffort）",
+                MainForm.EmptyByDefaultKeys.Count == 6
+                && MainForm.EmptyByDefaultKeys.SetEquals(new[]
+                {
+                    nameof(Settings.ApiModel), nameof(Settings.Gpu), nameof(Settings.LayerSplit),
+                    nameof(Settings.ArenaPinGib), nameof(Settings.ExtraArgs), nameof(Settings.ReasoningEffort),
+                }),
+                string.Join("、", MainForm.EmptyByDefaultKeys.OrderBy(x => x, StringComparer.Ordinal)));
+
+            var blankPath = MainForm.ModelParamsPath();
+            var blankBefore = File.Exists(blankPath) ? File.ReadAllText(blankPath) : null;
+            try
+            {
+                Directory.CreateDirectory(MainForm.RunConfigDir());
+                const string blankTag = "blank-skip";
+                // 夹具：那 6 格**全部写着空值行**（老文件的样子）+ 一行注释 + 一条 ArgsN
+                File.WriteAllText(blankPath,
+                    "[" + blankTag + "]\n"
+                    + "ApiModel =\nContext = 131072\nKv = int8\nKvResident = false\nSpec = 4\nSpecMinP = 0.5\n"
+                    + "ExpertCache = auto\nPrefill = auto\nVision = gpu\nVramReserveMib = 700\n"
+                    + "Gpu =\nLayerSplit =\nArenaPinGib =\nHeadLate = false\nExtraArgs =\nReasoningEffort =\n"
+                    + "Args1 = --fake-flag\n; 我自己的注释\n",
+                    new UTF8Encoding(false));
+                // 全部取出厂默认（6 格空 + 10 格默认值），这样那 6 格就该被跳过并删行
+                var blankSnap = MainForm.SnapshotModelFields(new Settings());
+                MainForm.SaveModelSnapStore(
+                    new Dictionary<string, Settings>(StringComparer.OrdinalIgnoreCase) { [blankTag] = blankSnap }, out _, out _);
+                var blankSec = ModelParamsIni.Parse(File.ReadAllText(blankPath)).Find(blankTag);
+                var blankKeys = blankSec?.Body.Select(ModelParamsIni.KeyOf).Where(k => k is not null).ToList() ?? new List<string?>();
+                Check("A 判据15b 保存时默认即空的那 6 格不再写行、以前留的空值行也一并删掉（老文件里的空行不赖着不走）",
+                    blankSec is not null
+                    && blankKeys.All(k => !MainForm.EmptyByDefaultKeys.Contains(k!))
+                    && blankKeys.Count(k => k == nameof(Settings.Context)) == 1,
+                    blankSec is null ? "没有这一段" : string.Join(" / ", blankSec.Body));
+
+                var writtenOwned = blankSec!.Body.Count(l => ModelParamsIni.KeyOf(l) is { } k2 && MainForm.ModelOwnedKeys.Contains(k2)
+                    && (ModelParamsIni.ValueOf(l) ?? "").Length > 0);
+                Check("A 判据15c 默认非空的 10 格照旧照写（缺了行就静默回落默认，等于把校验拦截也丢了）",
+                    writtenOwned == 10,
+                    "写出来的家底格数 = " + writtenOwned + " ｜" + string.Join(" / ", blankSec!.Body));
+
+                Check("A 判据15d 写回纪律①照旧：注释与 ArgsN 一行不动（只删自己那几格的空值行）",
+                    blankSec.Body.Contains("; 我自己的注释")
+                    && blankSec.Body.Any(l => l.Replace(" ", "") == "Args1=--fake-flag"),
+                    string.Join(" / ", blankSec.Body));
+
+                // 15e：值非空就必须写行（跳过只看「空 + 默认空」，不能误伤填了值的格子）
+                const string filledTag = "blank-filled";
+                File.WriteAllText(blankPath, "[" + filledTag + "]\nContext = 131072\n", new UTF8Encoding(false));
+                var filledSnap = MainForm.SnapshotModelFields(new Settings { LayerSplit = "12", ArenaPinGib = "8", ExtraArgs = "--foo 1" });
+                MainForm.SaveModelSnapStore(
+                    new Dictionary<string, Settings>(StringComparer.OrdinalIgnoreCase) { [filledTag] = filledSnap }, out _, out _);
+                var filledSec = ModelParamsIni.Parse(File.ReadAllText(blankPath)).Find(filledTag);
+                Check("A 判据15e 那 6 格一旦填了值就照写（跳过只针对「值为空」，不能误伤填过的格）",
+                    filledSec is not null
+                    && ModelParamsIni.TryGet(filledSec, nameof(Settings.LayerSplit), out var ls) && ls == "12"
+                    && ModelParamsIni.TryGet(filledSec, nameof(Settings.ArenaPinGib), out var ap) && ap == "8"
+                    && ModelParamsIni.TryGet(filledSec, nameof(Settings.ExtraArgs), out var ea) && ea == "--foo 1",
+                    filledSec is null ? "没有这一段" : string.Join(" / ", filledSec.Body));
+            }
+            finally
+            {
+                MainForm.ResetModelParamsStampForTest();
+                try
+                {
+                    if (blankBefore is null) { if (File.Exists(blankPath)) File.Delete(blankPath); }
+                    else File.WriteAllText(blankPath, blankBefore);
+                }
+                catch { /* 清不掉不影响结论 */ }
+            }
         }
     }
 }

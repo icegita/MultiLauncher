@@ -187,6 +187,8 @@ public partial class MainForm
     internal bool RouteModeForTest => ActiveView.RouteMode();
     internal List<ModelEntry> LlamaModelsForTest => _llamaModels;
     internal List<ModelEntry> ModelsForTest => _models;
+    /// <summary>DEC-222：Ninfer 那一份列表的只读口（判据 14d/14e 要断"删掉一段之后跟着少 / 选中落到还剩下的那件"）。</summary>
+    internal List<ModelEntry> NinferModelsForTest => _ninferModels;
 
     // DEC-065「已加载」标识：下拉里每一枚现在的状态词（自检据此断言"标没标、标在哪一枚"）
     internal List<(string Tag, string Badge)> ModelBadgesForTest() => _cboModel.Items
@@ -323,6 +325,20 @@ public partial class MainForm
     internal bool ModeBarShownForTest => _btnMode.Visible;
     internal string BackendFaceForTest => _backendToggle.ActiveText;
     internal bool BackendSoloForTest => _backendToggle.Solo;
+    /// <summary>DEC-222 补：把 Ninfer 两侧的启用位直接钉成确定态（只改内存、不写盘）。
+    /// 为什么要它：方块「两枚面 / 只剩一枚」由这两个开关决定，于是**用户 ini 里 WSL 那一侧开着还是关着**会决定
+    /// DEC-103 / DEC-098③ 那两条用例走不走得到「真换过两次后端」这个形状 —— 出厂默认 `NinferWslOn=false`，
+    /// 方块是 Solo、`NextNinferBackend` 返回空串 = 换后端是空操作，那两条判据的前提就不成立（BUG-052 同族：
+    /// 用户机器上恰好是什么配置不该决定用例红绿）。口径同 DEC-126 那条「走真路径先喂样本」。</summary>
+    /// <summary>DEC-222 补：当前两侧启用位的读口（用例要先备份、测完还原）。</summary>
+    internal bool NinferBackendOnForTest(string backend) => NinferBackendOn(_config.Current, backend);
+    internal void SetNinferBackendsForTest(bool winOn, bool wslOn)
+    {
+        if (!winOn && !wslOn) return;                      // 至少留一侧（保存校验也是这条）；调用方给错就不动
+        _config.Current.NinferWinOn = winOn;
+        _config.Current.NinferWslOn = wslOn;
+        RefreshNinferBackendUi();
+    }
     /// <summary>DEC-090 的两条数：露图像素 + 侧栏那一列的总高（改前改后比它，才证得了"净增 0"）。</summary>
     internal (int Peek, int FaceH, int ControlH) ModeToggleGeometryForTest
         => (_btnMode.GeometryForTest().Peek, _btnMode.GeometryForTest().FaceHeight, _btnMode.Height);
