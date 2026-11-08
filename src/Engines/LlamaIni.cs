@@ -152,7 +152,7 @@ internal static partial class LlamaIni
         return list;
     }
 
-    /// 从目录名取 build 号（`llama-b11259-bin-win-cuda-13.4-x64` -> `b11259`）；
+    /// 从目录名取 build 号（`llama-b11259-bin-win-cuda-13.5-x64` -> `b11259`）；
     /// 目录名里没有就退回读 llama-server.exe 的文件版本信息（本机实测该项为空，故目录名是主路径）。
     public static string DirVersion(string dir)
     {

@@ -54,4 +54,17 @@ public partial class MainForm
     internal bool NinferCancellable => _ninferUpdating && PhaseCancellable(_ninferPhase) && _ninferRemoteAssetName.Length > 0;
     internal void SetNinferBusyForTest(bool on) { _ninferUpdating = on; PokeUpdateUi(); }
 
+    /// <summary>左栏「版本」行那枚小箭头的亮/灰（模块表 <see cref="ModuleView.UpdateArrowLit"/> 的这一行）：
+    /// **按当前后端那一侧算** —— 方块停在 WSL 只认 WSL 那条链的检查结论，停在 WIN 只认 WIN 那条的 offer。
+    /// 2026-10-29 之前这里是恒读 WIN 那条 offer（`RefreshSidebarUpdateButtons` 只看 `Offer()`），于是
+    /// 「WIN 探到新版 → 切到 WSL」箭头照样亮着，而它点下去开的偏偏是 WSL 那扇窗（`UpdateSideFor` 早就按后端分了）。
+    /// 两侧各有一位判据：WIN = <c>_ninferHasUpdate</c>（跳过/升级/新一轮检查都会清），WSL = <c>_ninferWslHasUpdate</c>。</summary>
+    bool NinferUpdateArrowLit() =>
+        NinferArrowLit(ActiveNinferBackend(_config.Current), NinferUpdateOfferForSettings().Show, _ninferWslHasUpdate);
+
+    /// <summary>上面那一条的纯判据（自检直接喂样本穷举，不碰界面状态）：**只看当前那一侧**。
+    /// 两个入参 = 两条链各自的体检结论；另一侧那一位在这一侧一点话语权都没有（正是这次要修的那点）。</summary>
+    internal static bool NinferArrowLit(string activeBackend, bool winOffer, bool wslPending) =>
+        activeBackend == NinferIni.BackendWsl ? wslPending : winOffer;
+
 }

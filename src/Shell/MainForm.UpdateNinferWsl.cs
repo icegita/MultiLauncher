@@ -41,6 +41,9 @@ public partial class MainForm
             return;
         }
         _ninferUpdating = true;
+        // 2026-10-29：开新一轮检查 = 上一轮的结论作废（口径同 WIN 那条链的 ClearNinferOffer）。
+        // 不清的话"上一轮查到有新版本、这一轮检查失败"会留下一个亮着的箭头，指着一条没查成的话。
+        _ninferWslHasUpdate = false;
         SetNinferWslBusy("检查中…", "检查 WSL 更新（git fetch）…");
         LogN($"$ 检查 WSL 侧更新：wsl -d {distro} bash -l -s（git fetch " + (wslUrl.Length > 0 ? "更新源那一头" : "origin") + " + 比两侧提交）");
         _ = Task.Run(() =>
@@ -60,7 +63,8 @@ public partial class MainForm
             {
                 var sh = NinferWslShort(chk.Local);
                 LogN($"WSL 侧已是最新（{chk.Branch} @ {sh}）。");
-                UiPost(() => { SetNinferWslInfo("已是最新", System.Drawing.Color.Green);      // DEC-110③：窗里也要看得见
+                UiPost(() => { _ninferWslHasUpdate = false;                                    // 查清了：这一侧没有待升的
+                    SetNinferWslInfo("已是最新", System.Drawing.Color.Green);      // DEC-110③：窗里也要看得见
                     Toast.Show(this, "WSL 侧已是最新（" + chk.Branch + " @ " + sh + "）", Toast.Kind.Ok); FinishNinferWsl(); });
                 return;
             }
@@ -71,6 +75,7 @@ public partial class MainForm
             UiPost(() =>
             {
                 if (IsDisposed) { FinishNinferWsl(); return; }
+                _ninferWslHasUpdate = true;      // 2026-10-29：这一侧确实有待升的 —— 后端停在 WSL 时箭头亮的就是它
                 var res = Dialogs.UpdateDetailDialog(this, branch + " @ " + remoteShort, localShort,
                     commits.Length > 0 ? commits : "（这几次提交没有写提交信息）");
                 if (res == DialogResult.Yes)
@@ -160,6 +165,7 @@ public partial class MainForm
         {
             AdoptNinferWslProbe(probe, vc);
             LogN($"WSL 引擎已更新 → {branch} @ {remoteShort}（未自动启动；点「启动」，或第一个 /v1 请求会自动拉起）。");
+            _ninferWslHasUpdate = false;                 // 2026-10-29：升上去了 = 这一侧没有待升的了，箭头回灰
             SetNinferWslInfo("已升级到 " + remoteShort, System.Drawing.Color.Green);      // DEC-110③
             Toast.Show(this, "WSL 引擎已更新到 " + branch + " @ " + remoteShort, Toast.Kind.Ok);
             FinishNinferWsl();
@@ -240,6 +246,8 @@ public partial class MainForm
         {
             AdoptNinferWslProbe(probe, vc);
             LogN($"已回退到 {commit}（免重编；未自动启动，点「启动」或等第一个请求）。");
+            // 2026-10-29：回退这一刀**不动** _ninferWslHasUpdate —— 它表达的是"上次 git fetch 的结论"，
+            // 而这里一次 fetch 都没做（回退只认 VM 里的快照）。判不了就不改判据，同 DEC-067 那条口径。
             SetNinferWslInfo("已回退到 " + commit, System.Drawing.Color.Green);      // DEC-110③
             Toast.Show(this, "WSL 引擎已回退到 " + commit, Toast.Kind.Ok);
             FinishNinferWsl();

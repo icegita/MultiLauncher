@@ -350,6 +350,10 @@ public partial class MainForm
         // 次序要紧：必须在 ApplySettings 之后（控件有值了 CollectSettings 才不会把界面收空）、RefreshModels 之前。
         if (MigrateLlamaParamsIntoSections() > 0) SaveConfig(commitParams: false);
         RestoreWindowBounds();
+        // BUG-088（他报「退出程序重新运行，还是有黑框一闪而过」）：勾了「启动时隐藏到托盘」时，
+        // 老做法是 Shown 里 Hide() —— 可那一帧窗体**已经画到屏幕上了**（深色窗体 = 他说的"黑框"）。
+        // 现在 Show 之前先把它挪到屏幕外、任务栏也不留按钮，Hide 完再搬回来：一帧都看不见。
+        if (_startHidden) PrepareHiddenStart();
         SetupTray();
         RefreshModels();
         // DEC-064 一次性迁移：老 ini 把所有模型共用的一份扁平家底记在 [Current] 里（换模型时只有 tag 落盘、
@@ -433,13 +437,16 @@ public partial class MainForm
                 // = 正常一次会话里 _ninferWslScanned 恒 false，界面上那句"VM 里没找到这个件"永不触发、
                 // 起服务前那条新增的 WSL 判据也永远只能放行。启动后台补这一次（它自己判模块与开关，没开立刻返回）；
                 // 测试态一次都不进 VM（DEC-097⑥ 那道按进程的闸）。
-                if (!VersionProbeDisabledForTest) RefreshNinferWslArtifacts();
+                // BUG-086：静默启动（--tray）那一次**不许起 wsl.exe** —— 主路走 `\\wsl$\` 直读；那条不通就把
+                // wsl.exe 那趟压到窗口真到眼前（ShowMainWindow）再补。开机那一瞬的唯一黑框就出自这一条。
+                if (!VersionProbeDisabledForTest) RefreshNinferWslArtifacts(allowWslExe: !_startHidden);
                 // DEC-202：本程序自更新 —— 启动后台探一次（每进程一次；失败静默只进日志，启动期不打扰）。
                 // 闸门同理：自检 / 出图台一律不联网（那一位取决于上游今天发了什么，不该决定用例红绿）。
                 if (!AppUpdateProbeDisabledForTest) CheckAppUpdate(force: false);
             });
-            // 开机自启带上 --tray 时只留在托盘，不弹主窗口（设置页「启动时隐藏到托盘」）
-            if (_startHidden) Hide();
+            // 开机自启带上 --tray / 勾了「启动时隐藏到托盘」时只留在托盘，不弹主窗口
+            // （BUG-088：PrepareHiddenStart 已经把它藏到屏幕外了，这一句只是收尾 + 把位置搬回来）
+            if (_startHidden) { Hide(); RestoreAfterHiddenStart(); }
         };
         UiDark.Apply(this);
     }

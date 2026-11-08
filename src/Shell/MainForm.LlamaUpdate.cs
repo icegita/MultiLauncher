@@ -22,7 +22,7 @@ public partial class MainForm
         if (LlamaBuildOf(local) < 0)
         {
             SetLlamaInfo("检查失败", System.Drawing.Color.Firebrick);
-            LogL("检查更新失败：从目录名里取不到 build 号（" + dir + "）——这个目录不像 llama.cpp 的解压目录（形如 llama-b11259-bin-win-cuda-13.4-x64）");
+            LogL("检查更新失败：从目录名里取不到 build 号（" + dir + "）——这个目录不像 llama.cpp 的解压目录（形如 llama-b11259-bin-win-cuda-13.5-x64）");
             return;
         }
         var suffix = LlamaAssetSuffix(dir);
@@ -48,6 +48,7 @@ public partial class MainForm
             try { json = File.ReadAllText(tmp); }
             catch (Exception ex) { LogL("读发布信息失败: " + ex.Message); SetLlamaInfo("检查失败", System.Drawing.Color.Firebrick); FinishLlama(); return; }
             var rel = ParseLlamaRelease(json, suffix);
+            LogL($"挑包：{rel.AssetName}（{(rel.AssetSuffix == suffix ? "精确匹配本地后缀 " + suffix : "本地后缀 " + suffix + " 上游已无，放宽到同架构 " + rel.AssetSuffix)}）");
             var (tag, notes, url, published, asset) = (rel.Tag, rel.Notes, rel.AssetUrl, rel.Published, rel.AssetName);
             if (tag.Length == 0)
             {
@@ -76,6 +77,7 @@ public partial class MainForm
                 _llamaRemotePublished = published;
                 _llamaRemoteAssetSha256 = rel.Sha256;       // DEC-067：跟着这一版一起记，下载完照它验
                 _llamaRemoteAssetSize = rel.Size;
+                _llamaRemoteAssetSuffix = rel.AssetSuffix;       // DEC-214：放宽匹配时新目录名要跟着实际资产走
                 _llamaHasUpdate = !isSkipped;
                 _llamaSkippedShown = isSkipped;
                 SetLlamaInfo(isSkipped ? $"远端 {tag}（你已跳过）" : $"发现新版本 {tag}",
@@ -156,7 +158,7 @@ public partial class MainForm
             var newTag = _llamaRemoteTag;
             var dir = s.LlamaDir.TrimEnd('\\', '/');
             var parent = Path.GetDirectoryName(dir) ?? "";
-            var newName = LlamaNewDirName(dir, newTag);
+            var newName = LlamaNewDirName(dir, newTag, _llamaRemoteAssetSuffix);
             dst = Path.Combine(parent, newName);
             if (string.Equals(Path.GetFullPath(dst), Path.GetFullPath(dir), StringComparison.OrdinalIgnoreCase))
             {

@@ -68,7 +68,14 @@ internal sealed partial class MdDoc : Control
 
     int PadX => UiTheme.S(this, 10);
     int PadY => UiTheme.S(this, 8);
-    int Avail => Math.Max(UiTheme.S(this, 60), Width - PadX * 2);
+
+    /// 右侧让位（设备像素）：容器在那儿叠着一根细滑条，正文折行必须停在它左边 —
+    /// BUG-091（他实跑报「说明文字被滚动条压住」）：滑条是**盖**在正文上面画的，原来正文一路排到
+    /// `Width - PadX`，正好被滑条那 6px 拇指压掉最后几个字。由 <see cref="MdScroll"/> 按滑条实际占位设上；
+    /// 默认 0 = 不叠滑条的场合（自检里那些裸 MdDoc、以及别处单独用它排版）一字不变。
+    internal int ReserveRight;
+
+    int Avail => Math.Max(UiTheme.S(this, 60), Width - PadX * 2 - ReserveRight);
 
     /// 内容总高（画布高，不是控件高）：容器拿它算滑条范围
     public int Total { get; private set; }

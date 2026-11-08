@@ -488,7 +488,12 @@ internal static partial class SelfTest
                         // 灰/绿两态（DEC-108）：默认灰；给当前模块造一个 offer（走真广播）→ 转绿；清掉 → 回灰
                         {
                             var pageBak6 = uiForm.ActiveModuleForTest;
+                            var faceBak6 = uiForm.NinferBackendForTest;
                             uiForm.SwitchModuleForTest("ninfer");
+                            // 2026-10-29：这一条断的是 **WIN 那条链** 的 offer，方块必须钉在 WIN ——
+                            // 否则用户的 ini 里后端停在 WSL 时，下面 SetNinferOfferForTest（WIN offer）本来就
+                            // 不该点亮箭头，用例会因"他机器上的配置"红掉（DEC-126 那条规矩）。
+                            uiForm.SetNinferFaceForTest(NinferIni.BackendWin);
                             uiForm.RefreshSidebarButtonsForTest();
                             var gray = uiForm.UpdateBtnGeometryForTest("版本").Green == false;
                             uiForm.SetNinferOfferForTest("engine-v0.12.0-x", "2026-10-05T01:00:00Z", skipped: false);
@@ -499,6 +504,48 @@ internal static partial class SelfTest
                             Check("DEC-108 小箭头两态：没探到新版本 = 灰；探到（offer 经真广播进来）= 品牌绿；清掉回灰",
                                 gray && green && backToGray,
                                 $"gray={gray} green={green} backToGray={backToGray}");
+                            // 2026-10-29（他实跑点名）：Ninfer 一模块两条独立更新链，箭头**按当前后端那一侧**算 ——
+                            // 纯判据先穷举（另一侧那一位在这一侧不许有话语权），再在真页面上验一遍。
+                            Check("2026-10-29 小箭头判据：Ninfer 只认当前后端那一侧（WIN 的 offer 不给 WSL 点灯，反之亦然）",
+                                MainForm.NinferArrowLit(NinferIni.BackendWin, true, false)
+                                && !MainForm.NinferArrowLit(NinferIni.BackendWsl, true, false)
+                                && MainForm.NinferArrowLit(NinferIni.BackendWsl, false, true)
+                                && !MainForm.NinferArrowLit(NinferIni.BackendWin, false, true),
+                                "win(win=true,wsl=false)=" + MainForm.NinferArrowLit(NinferIni.BackendWin, true, false)
+                                + " wsl(win=true,wsl=false)=" + MainForm.NinferArrowLit(NinferIni.BackendWsl, true, false));
+                            {
+                                bool winOnBak = uiForm.NinferBackendOnForTest(NinferIni.BackendWin);
+                                bool wslOnBak = uiForm.NinferBackendOnForTest(NinferIni.BackendWsl);
+                                uiForm.SetNinferBackendsForTest(true, true);      // 两侧都开，方块才停得住任意一侧
+                                uiForm.SetNinferFaceForTest(NinferIni.BackendWin);
+                                uiForm.SetNinferOfferForTest("engine-v0.12.0-x", "2026-10-05T01:00:00Z", skipped: false);
+                                uiForm.SetNinferWslHasUpdateForTest(false);
+                                uiForm.RefreshSidebarButtonsForTest();
+                                bool winLit = uiForm.UpdateBtnGeometryForTest("版本").Green;
+                                // 同一时刻切到 WSL：WIN 那条 offer 还在，但 WSL 这一侧没查过 → 必须回灰（就是这次修的那一格）
+                                uiForm.SetNinferFaceForTest(NinferIni.BackendWsl);
+                                uiForm.RefreshSidebarButtonsForTest();
+                                bool wslDark = uiForm.UpdateBtnGeometryForTest("版本").Green == false;
+                                // WSL 自己查到有待升的 → 亮；清掉 → 回灰
+                                uiForm.SetNinferWslHasUpdateForTest(true);
+                                bool wslLit = uiForm.UpdateBtnGeometryForTest("版本").Green;
+                                uiForm.SetNinferWslHasUpdateForTest(false);
+                                bool wslBackDark = uiForm.UpdateBtnGeometryForTest("版本").Green == false;
+                                // 反过来：WSL 亮着时切回 WIN（WIN 的 offer 也还在）→ 仍按 WIN 算，不许被 WSL 那位左右
+                                uiForm.SetNinferWslHasUpdateForTest(true);
+                                uiForm.SetNinferFaceForTest(NinferIni.BackendWin);
+                                uiForm.RefreshSidebarButtonsForTest();
+                                bool backToWinLit = uiForm.UpdateBtnGeometryForTest("版本").Green;
+                                uiForm.ClearNinferOfferForTest();
+                                uiForm.SetNinferWslHasUpdateForTest(false);
+                                uiForm.RefreshSidebarButtonsForTest();
+                                Check("2026-10-29 真页面上：WIN 探到新版 → 亮；切到 WSL（WIN 的 offer 还在）→ 灰；"
+                                    + "WSL 探到新版 → 亮；清掉 → 灰；切回 WIN 仍按 WIN 算",
+                                    winLit && wslDark && wslLit && wslBackDark && backToWinLit,
+                                    $"winLit={winLit} wslDark={wslDark} wslLit={wslLit} wslBackDark={wslBackDark} backToWinLit={backToWinLit}");
+                                uiForm.SetNinferBackendsForTest(winOnBak, wslOnBak);
+                            }
+                            uiForm.SetNinferFaceForTest(faceBak6);
                             uiForm.SwitchModuleForTest(pageBak6);
                         }
                         // 点了开哪扇窗（纯判据）：Strata/llama 恒 win；Ninfer 按当前后端；两扇窗的容器键必须分开
@@ -675,11 +722,20 @@ internal static partial class SelfTest
                     $"内容 {scroll.DocHeight} / 可视 {scroll.ViewHeight}");
                 Check("⑤ 更新内容框：滚三格滚轮真的把内容滚下去了（不是只画了根条）", scroll.WheelMoves,
                     "滚后位移 " + scroll.After);
+                // BUG-091（他实跑：说明最后几个字被滚动条压住）：滑条是盖在正文上画的，正文得自己让位
+                var gut = Dialogs.ProbeDetailGutter(uiForm, md);
+                Check("BUG-091 更新内容框：正文排版右边界停在滑条左侧（文字不被滑条压住）",
+                    gut.Reserve > 0 && gut.TextRight < gut.BarLeft,
+                    $"正文右 {gut.TextRight} / 滑条左 {gut.BarLeft}（让位 {gut.Reserve}）");
                 // DEC-092 第 3 条：自绘之后不能连字都选不了（用户："里面的内容现在无法选中复制了"）
                 var sel = Dialogs.ProbeDetailSelection(uiForm, md);
                 Check("选中复制：复制的是渲染后的纯文本（** 与行内 `码` 的记号不进复制结果；粗体内再嵌记号按原样显示=不递归）",
                     !sel.Plain.Contains("**") && !sel.Plain.Contains("`api_key`")
-                    && sel.Plain.Contains("Without api_key the") && sel.Plain.Contains("--kv q4_0")
+                    // 把折行处的换行/空格抹平再找：Plain 里每条**可视行**之间是 \n，量宽一变断行位置就变
+                    //（BUG-091 让正文让开滑条那一竖条之后，正好把 "Without" 与 "api_key" 拆到两行 —— 那条断言当时量的
+                    //  是断行位置，不是渲染结果）。判据只该打在"记号有没有被渲染掉"上。
+                    && System.Text.RegularExpressions.Regex.Replace(sel.Plain, "\\s+", " ").Contains("Without api_key the")
+                    && sel.Plain.Contains("--kv q4_0")
                     && sel.Plain.Contains("The prompt path gathers"),
                     sel.Plain.Length + " 字，首行：" + sel.Plain.Split('\n')[0]);
                 Check("选中复制：全选（Ctrl+A 与双击都汇到 SelectAll）拿到的就是整篇",

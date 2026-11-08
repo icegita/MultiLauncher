@@ -257,6 +257,10 @@ internal sealed partial class MdDoc : Control
 
     /// 排版宽度变了要重排（容器改大小、滑条出现/消失都会走到这里）
     public void Relayout() { _dirty = true; MeasureLayout(); }
+
+    /// <summary>BUG-091 自检用：正文排版右边界（相对控件左边）。容器拿它跟滑条左边缘比 ——
+    /// 判据是"文字一律停在滑条左侧"，不是"看起来差不多"。</summary>
+    internal int ContentRightForTest => PadX + Avail;
 }
 
 // 更新说明的滚动容器：圆角面板（与窗体同底色，不再是一块深色"卡片"）+ 细滑条 + 滚轮派发。
@@ -291,10 +295,17 @@ internal sealed class MdScroll : RoundedPanel
         Disposed += (_, _) => { try { if (_wheel is not null) Application.RemoveMessageFilter(_wheel); } catch { } };
     }
 
+    // 滑条的占位口径（逻辑像素）：控件宽 12、与圆角边留 5 —— 摆位与"正文让位"共用这两个数
+    const int BarW = 12, BarGap = 5;
+
     void Place()
     {
-        int w = UiTheme.S(this, 12), pad = UiTheme.S(this, 5);
+        int w = UiTheme.S(this, BarW), pad = UiTheme.S(this, BarGap);
         _bar.SetBounds(Width - w - pad, pad, w, Math.Max(UiTheme.S(this, 20), Height - pad * 2));
+        // BUG-091：正文要让开滑条那一竖条（滑条宽 + 两侧间距），否则最后几个字被滑条压住。
+        // 只在值真的变了才重排（Place 每次 Layout 都会跑，量宽不变时别白白整篇重排）。
+        int reserve = UiTheme.S(this, BarW + BarGap * 2);
+        if (Doc.ReserveRight != reserve) { Doc.ReserveRight = reserve; Doc.Relayout(); }
         Sync();
     }
 
@@ -310,6 +321,8 @@ internal sealed class MdScroll : RoundedPanel
     public void SetMarkdown(string md) { Doc.Markdown = md; Doc.Relayout(); Sync(); }
 
     internal UiScrollbar BarForTest => _bar;
+    /// BUG-091 自检用：正文排版右边界与滑条左边缘（同一个父坐标系里比，Doc 是 Dock.Fill、Left=0）
+    internal int BarLeftForTest => _bar.Left;
 
     sealed class WheelFilter : IMessageFilter
     {

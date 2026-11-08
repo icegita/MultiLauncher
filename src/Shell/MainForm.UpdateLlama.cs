@@ -12,10 +12,10 @@ namespace MultiLauncher;
 // 查证过的两件事（别再改回去）：
 //   · ggml-org/llama.cpp 的 `releases/latest` 返回的是 `v0.5.0` 那种版本标签，里面**没有 Windows 资产**
 //     ——每轮构建都发成 pre-release，所以必须走 `releases?per_page=` 列表，取最新的 `b\d+`；
-//   · 包名与目录名同构：目录 `llama-b11259-bin-win-cuda-13.4-x64` ↔ 资产 `llama-b11368-bin-win-cuda-13.4-x64.zip`，
+//   · 包名与目录名同构：目录 `llama-b11259-bin-win-cuda-13.5-x64` ↔ 资产 `llama-b11368-bin-win-cuda-13.5-x64.zip`，
 //     所以"该下哪只包"直接从当前目录名推出来，不用问用户（DEC-006 第 4 条）。
-//   · 那只 zip 里不含 cudart 系列 DLL（另有 `cudart-llama-bin-win-cuda-13.4-x64.zip`），本机现有目录本来也没有
-//     （走系统 CUDA v13.4），所以解压即用，不需要额外搬运行库。
+//   · 那只 zip 里不含 cudart 系列 DLL（另有 `cudart-llama-bin-win-cuda-13.5-x64.zip`），本机现有目录本来也没有
+//     （走系统 CUDA v13.5），所以解压即用，不需要额外搬运行库。
 public partial class MainForm
 {
     // 状态（与 Strata 那套分开各记一份：跳过的版本也各自独立）
@@ -24,6 +24,7 @@ public partial class MainForm
     bool _llamaHasUpdate, _llamaSkippedShown;
     string _llamaRemoteTag = "", _llamaRemoteNotes = "", _llamaRemoteAssetUrl = "", _llamaRemoteAssetName = "", _llamaRemotePublished = "";
     string _llamaRemoteAssetSha256 = "";      // DEC-067：资产上的 digest（"sha256:…"，上游没给就空着）
+    string _llamaRemoteAssetSuffix = "";      // DEC-214：挑到的资产后缀（bin-win-cuda-13.5-x64）；精确匹配=本地后缀，放宽匹配=实际下载那只
     long _llamaRemoteAssetSize;               // DEC-067：资产声明的字节数，下完先比这个
     string _llamaMemo = "";
     System.Drawing.Color _llamaMemoColor = UiTheme.TextMuted;
@@ -34,7 +35,7 @@ public partial class MainForm
 
     // ---------------- 纯函数（自检直接喂样本断言，不联网） ----------------
 
-    /// 目录名 → 资产后缀：`llama-b11259-bin-win-cuda-13.4-x64` → `bin-win-cuda-13.4-x64`
+    /// 目录名 → 资产后缀：`llama-b11259-bin-win-cuda-13.5-x64` → `bin-win-cuda-13.5-x64`
     internal static string LlamaAssetSuffix(string dir)
     {
         var name = Path.GetFileName((dir ?? "").TrimEnd('\\', '/'));
@@ -42,14 +43,17 @@ public partial class MainForm
         return m.Success ? m.Groups[1].Value : "";
     }
 
-    /// 新目录名：同前缀同后缀，只换 build 号（tag 允许写成 `b11368` 或 `v…-b11368`）
-    internal static string LlamaNewDirName(string dir, string tag)
+    /// 新目录名：同前缀同后缀，只换 build 号（tag 允许写成 `b11368` 或 `v…-b11368`）。
+    /// assetSuffix 非空时（DEC-214 放宽匹配挑到的那只）用它盖掉本地后缀，使新目录名跟着实际下载的资产走，不写死旧 CUDA 号。
+    internal static string LlamaNewDirName(string dir, string tag, string assetSuffix = "")
     {
         var name = Path.GetFileName((dir ?? "").TrimEnd('\\', '/'));
         var t = Regex.Match(tag ?? "", @"b\d+", RegexOptions.IgnoreCase).Value;
         var m = Regex.Match(name, @"^(llama-)(b\d+)(-.+)?$", RegexOptions.IgnoreCase);
         if (t.Length == 0) return name;
-        return m.Success ? m.Groups[1].Value + t + m.Groups[3].Value : "llama-" + t;
+        if (!m.Success) return "llama-" + t;
+        var rest = assetSuffix.Length > 0 ? "-" + assetSuffix : m.Groups[3].Value;
+        return m.Groups[1].Value + t + rest;
     }
 
     /// 「更新源」允许填网页地址或 api 地址，统一成 releases 列表接口；认不出 owner/repo 就返回空。
@@ -73,13 +77,19 @@ public partial class MainForm
     /// 从 releases 列表 JSON 里挑「最新的、且带着我们要的那只资产」的一版（列表本身就新→旧）。
     /// 跳过 draft 与 `v0.5.0` 这种没有二进制资产的版本标签；pre-release 照收（llama.cpp 每轮构建都是 pre-release）。
     /// suffix 为空时退化成"任意 zip"（目录名推不出后缀的场合，比如用户手改过目录名）。
+    /// 两档匹配（DEC-214，远端升 CUDA 大版本时老用户也不会卡死）：
+    ///   ① 精确后缀（本地装的就是这个 CUDA 构建，正常情况，优先）；
+    ///   ② 精确落空（上游把用户这个 CUDA 版本砍了，如 13.4→13.5）就放宽到「同架构（x64/arm64）任意 CUDA 版本」，
+    ///      取最新发布的那只（列表新→旧，第一只匹配的发布就是最新构建），同发布里 CUDA 版本取最高。
     /// Sha256 / Size 来自资产上的 digest 与 size（DEC-067：下载完要对着验，上游没给就是空串 / 0，按"没这条校验"走）。
-    internal static (string Tag, string Notes, string AssetUrl, string Published, string AssetName, string Sha256, long Size)
+    internal static (string Tag, string Notes, string AssetUrl, string Published, string AssetName, string Sha256, long Size, string AssetSuffix)
         ParseLlamaRelease(string json, string suffix)
     {
+        var none = ("", "", "", "", "", "", 0L, "");
         try
         {
-            if (JsonNode.Parse(json) is not JsonArray arr) return ("", "", "", "", "", "", 0);
+            if (JsonNode.Parse(json) is not JsonArray arr) return none;
+            var arch = ArchOf(suffix);
             foreach (var n in arr)
             {
                 if (n is not JsonObject r) continue;
@@ -87,23 +97,42 @@ public partial class MainForm
                 var tag = r["tag_name"]?.GetValue<string>() ?? "";
                 if (!Regex.IsMatch(tag, @"^b\d+$", RegexOptions.IgnoreCase)) continue;
                 if (r["assets"] is not JsonArray assets) continue;
+                (string Tag, string Notes, string Url, string Published, string Name, string Sha256, long Size, string Suffix) exact = none;
+                (string Tag, string Notes, string Url, string Published, string Name, string Sha256, long Size, string Suffix) relaxed = none;
+                (string Tag, string Notes, string Url, string Published, string Name, string Sha256, long Size, string Suffix) any = none;  // 空后缀退化：目录名推不出后缀时的"任意 llama- .zip"
+                double relaxedCv = -1;
                 foreach (var a in assets)
                 {
                     var name = a?["name"]?.GetValue<string>() ?? "";
                     var url = a?["browser_download_url"]?.GetValue<string>() ?? "";
-                    // 只认 llama- 开头的二进制包：同目录里还有 cudart-llama-bin-win-cuda-13.4-x64.zip 这种
-                    // CUDA 运行库包，它的名字同样以 "-bin-win-cuda-13.4-x64.zip" 结尾（自检抓到过误挑）
+                    // 只认 llama- 开头的二进制包：同目录里还有 cudart-llama-bin-win-cuda-13.5-x64.zip 这种
+                    // CUDA 运行库包，它的名字同样以 "-bin-win-cuda-13.5-x64.zip" 结尾（自检抓到过误挑）
                     if (url.Length == 0 || !name.StartsWith("llama-", StringComparison.OrdinalIgnoreCase)) continue;
                     if (!name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) continue;
-                    if (suffix.Length > 0 && !name.EndsWith("-" + suffix + ".zip", StringComparison.OrdinalIgnoreCase)) continue;
-                    return (tag, r["body"]?.GetValue<string>() ?? "", url,
-                            r["published_at"]?.GetValue<string>() ?? "", name,
-                            a?["digest"]?.GetValue<string>() ?? "", ReadLong(a?["size"]));
+                    var assetSuffix = LlamaAssetSuffix(name.Substring(0, name.Length - 4));   // 去 .zip 再取后缀
+                    var digest = a?["digest"]?.GetValue<string>() ?? "";
+                    var size = ReadLong(a?["size"]);
+                    var published = r["published_at"]?.GetValue<string>() ?? "";
+                    var notes = r["body"]?.GetValue<string>() ?? "";
+                    if (any.Tag.Length == 0) any = (tag, notes, url, published, name, digest, size, assetSuffix);   // 空后缀退化底：取第一个 llama- .zip
+                    if (suffix.Length > 0 && assetSuffix == suffix)
+                    {
+                        if (exact.Tag.Length == 0) exact = (tag, notes, url, published, name, digest, size, assetSuffix);
+                        continue;
+                    }
+                    if (arch.Length > 0 && assetSuffix.EndsWith("-" + arch, StringComparison.OrdinalIgnoreCase))
+                    {
+                        var cv = CudaVersion(assetSuffix);
+                        if (cv > relaxedCv) { relaxedCv = cv; relaxed = (tag, notes, url, published, name, digest, size, assetSuffix); }
+                    }
                 }
+                if (exact.Tag.Length > 0) return exact;          // 这个（最新的）发布有精确后缀 → 它就是答案
+                if (relaxed.Tag.Length > 0) return relaxed;       // 没有精确，但有同架构任意 CUDA → 取最新发布里 CUDA 最高的那只
+                if (suffix.Length == 0 && any.Tag.Length > 0) return any;   // 空后缀退化：目录名推不出后缀 → 任意 llama- .zip（不误挑 cudart）
             }
         }
         catch { /* 解析不了按"没探到"处理，界面给检查失败 */ }
-        return ("", "", "", "", "", "", 0);
+        return none;
     }
 
     // size 可能是整数也可能缺失；digest 老数据里没有 → 空串（校验按"上游没给"跳过，不当失败）
@@ -117,9 +146,24 @@ public partial class MainForm
         try { return n?.GetValue<bool>() ?? whenMissing; } catch { return whenMissing; }
     }
 
+    // suffix 末段 = 架构（x64 / arm64）；放宽匹配时只锁架构、不锁 CUDA 版本（DEC-214）
+    static string ArchOf(string suffix)
+    {
+        var i = (suffix ?? "").LastIndexOf('-');
+        return i >= 0 ? suffix!.Substring(i + 1) : "";
+    }
+
+    // 从 asset 后缀里抠 CUDA 版本号（"bin-win-cuda-13.5-x64" -> 13.5），抠不到返回 -1（DEC-214）
+    static double CudaVersion(string suffix)
+    {
+        var m = Regex.Match(suffix ?? "", @"cuda-(\d+(?:\.\d+)?)", RegexOptions.IgnoreCase);
+        if (!m.Success) return -1;
+        return double.TryParse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : -1;
+    }
+
     // ---------------- 界面回显（与 Strata 共用设置窗那一个刷新回调） ----------------
 
-    // 版本行只报版本：目录与 CUDA 后缀（bin-win-cuda-13.4-x64）都不显示——路径在「路径」那节看得到，
+    // 版本行只报版本：目录与 CUDA 后缀（bin-win-cuda-13.5-x64）都不显示——路径在「路径」那节看得到，
     // 后缀是选包用的内部判据，摆在版本行里读起来像半截路径（用户 2026-10-03：始终不该显示）。
     /// 只给出图用：把工作区那份内存里的 llama 目录指到实际存在的最新兄弟目录。
     /// 工作区构建目录没有 ini，默认值常指向已被用户删掉的旧版本，拍出来会是"（目录不存在）"这种假象。
@@ -189,8 +233,9 @@ public partial class MainForm
     {
         _llamaHasUpdate = false;
         _llamaSkippedShown = false;
-        _llamaRemoteTag = _llamaRemoteNotes = _llamaRemoteAssetUrl = _llamaRemoteAssetName = _llamaRemotePublished = _llamaRemoteAssetSha256 = "";
+        _llamaRemoteTag = _llamaRemoteNotes = _llamaRemoteAssetUrl = _llamaRemoteAssetName = _llamaRemotePublished =         _llamaRemoteAssetSha256 = "";
         _llamaRemoteAssetSize = 0;
+        _llamaRemoteAssetSuffix = "";
         PokeUpdateUi();
     }
 

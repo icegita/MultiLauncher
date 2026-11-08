@@ -146,7 +146,7 @@ public partial class MainForm
         RebuildModelList();
         var tagAfter = SelectedTag();
         if (tagAfter.Length == 0 || string.Equals(tagAfter, tagBefore, StringComparison.OrdinalIgnoreCase)) return;
-        log($"  原来选的那一件不在了，已切到「{tagAfter}」");
+        log($"原来选的那一件不在了，已切到「{tagAfter}」");
         LoadKnobsFromModel(tagAfter);
         OnModelChanged();
         ShowAdvancedForActiveModule();
@@ -159,7 +159,7 @@ public partial class MainForm
         var gone = before.Where(t => !after.Any(m => string.Equals(m.Tag, t, StringComparison.OrdinalIgnoreCase))).ToList();
         var added = after.Select(m => m.Tag)
                          .Where(t => !before.Contains(t, StringComparer.OrdinalIgnoreCase)).ToList();
-        if (gone.Count > 0) log("  家底里已经没有了：" + string.Join("、", gone));
-        if (added.Count > 0) log("  家底里新加了：" + string.Join("、", added));
+        if (gone.Count > 0) log("配置里已经没有了：" + string.Join("、", gone));
+        if (added.Count > 0) log("配置里新加了：" + string.Join("、", added));
     }
 }

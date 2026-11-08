@@ -36,6 +36,15 @@ public partial class MainForm
     // 都有 memo 那一行 —— 用户抓的"已是最新只出现在日志区、窗里看不见"就是这一处缺。
     string _ninferWslMemo = "";
     System.Drawing.Color _ninferWslMemoColor = UiTheme.TextMuted;
+    /// <summary>WSL 那一侧最近一次检查的结论 =「远端比本地新、还没升上去」。**左栏那枚小箭头在后端方块停在 WSL 时
+    /// 只认这一位**（DEC-108 的修正口径，2026-10-29 他实跑点名：WIN 探到新版后切到 WSL，箭头还亮着 ——
+    /// 那是把 WIN 那条链的 offer 当了两侧的判据）。WIN 那条的判据是 <c>_ninferHasUpdate</c>，两条链各记各的。
+    /// 不从 <see cref="_ninferWslMemo"/> 的文本里认：那是给人看的话（已是最新 / 检查失败 / 远端 X（未升级）…），
+    /// 拿文案当状态机是自找的。落点三处：检查开始清、查完有了就置、升上去/已是最新就清（见 UpdateNinferWsl）。</summary>
+    bool _ninferWslHasUpdate;
+    /// <summary>自检/出图台出口：直接把这一位喂成确定态（不联网、不进 VM），走同一条广播让箭头跟着变。
+    /// 断言那一头读的是**箭头本身的颜色**（真路径），所以这里只给写口、不留读口。</summary>
+    internal void SetNinferWslHasUpdateForTest(bool on) { _ninferWslHasUpdate = on; PokeUpdateUi(); }
     internal (string Memo, System.Drawing.Color Color) NinferWslStatusMemo() => (_ninferWslMemo, _ninferWslMemoColor);
     internal void SetNinferWslMemoForTest(string text, bool danger)
     {

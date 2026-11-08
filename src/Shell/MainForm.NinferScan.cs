@@ -66,7 +66,12 @@ public partial class MainForm
         return list;
     }
 
-    volatile bool _ninferWslScanned;                 // find 回来过没有（没回来之前不判"件不存在"）
+    volatile bool _ninferWslScanned;                 // 扫描回来过没有（没回来之前不判"件不存在"）
+    // BUG-086：UNC 那条不通、而这一趟又是静默启动（--tray）压下来的 —— 把 wsl.exe 那趟记在这儿，
+    // 等窗口真到眼前（ShowMainWindow）再补。wsl.exe 是控制台程序，WSL2 冷启动会闪一个黑框。
+    volatile bool _ninferWslFallbackDeferred;
+    /// <summary>证人位：测试态被闸挡下的次数（`\\wsl$` 与 wsl.exe 都会拉 VM，两样都算副作用）。</summary>
+    internal static int NinferWslScanSkippedForTest;
     // VM 里的 .ninfer：路径 + 字节数（2026-10-12 起那趟 find 带 `-printf '%s %p\n'`，占用估算要用它）。
     // 字节数拿不到时那位是 0 = 那一件的尺寸那一格空着，不影响"在不在"的判据。
     List<(string File, long Bytes)> _ninferWslFiles = new();
@@ -84,35 +89,63 @@ public partial class MainForm
         return f.Length > 0 ? f : "";              // 原样交回去，Ready 那一步会报"件不存在"
     }
 
-    /// <summary>异步扫 WSL 那一侧（`wsl.exe -d &lt;distro&gt; find`）。只在模块启用 + 那一侧启用时跑；
-    /// 扫不动就把 _ninferWslScanned 留着 false 并记一行，别把整页件标成"不存在"。</summary>
-    void RefreshNinferWslArtifacts()
+    /// <summary>异步扫 WSL 那一侧（主路 = 直接读 `\\wsl$\<distro>\…`；回退 = `wsl.exe -d <distro> find`）。
+    /// 只在模块启用 + 那一侧启用时跑；扫不动就把 _ninferWslScanned 留着 false 并记一行，别把整页件标成"不存在"。</summary>
+    /// <param name="allowWslExe">false = 这一趟**不许起 wsl.exe**（开机静默启动走这条）。UNC 那条不通时只记一个
+    /// "待回退"，等窗口真到眼前（<see cref="ShowMainWindow"/>）再补那一趟 —— wsl.exe 是控制台程序，
+    /// WSL2 冷启动会闪一个黑框，摆在开机那一瞬最刺眼（BUG-086）。</param>
+    void RefreshNinferWslArtifacts(bool allowWslExe = true)
     {
+        // DEC-097⑥ 那道按进程的闸收在**本体这一个入口**（口径同 DEC-160③）：测试态一次都不进 VM ——
+        // `\\wsl$\` 与 wsl.exe 都会把虚拟机拉起来，两样都算副作用。
+        if (VersionProbeDisabledForTest) { NinferWslScanSkippedForTest++; return; }
         var s = _config.Current;
-        if (!ModuleRegistry.NinferEnabled(s) || !s.NinferWslOn) { _ninferWslScanned = false; _ninferWslFiles = new(); return; }
+        if (!ModuleRegistry.NinferEnabled(s) || !s.NinferWslOn)
+        {
+            _ninferWslScanned = false; _ninferWslFiles = new(); _ninferWslFallbackDeferred = false; return;
+        }
         var distro = s.NinferDistro.Trim();
         var dir = s.NinferWslModelDir.Trim();
-        if (distro.Length == 0 || dir.Length == 0) { _ninferWslScanned = false; return; }
+        if (distro.Length == 0 || dir.Length == 0) { _ninferWslScanned = false; _ninferWslFallbackDeferred = false; return; }
         _ = Task.Run(() =>
         {
-            // 2026-10-12：`-printf '%s %p\n'` 顺带把字节数带回来（占用估算那格要用；GNU find 才认，Ubuntu-24.04 实测可用）。
-            var (code, output) = RunWslCapture($"-d {WslQuote(distro)} find {WslQuote(dir)} -type f -name \"*.ninfer\" -printf '%s %p\\n' 2>/dev/null", 60_000);   // DEC-136（C-11）：目录也要引号 + 给上限
-            if (code != 0)
+            // 主路（BUG-086）：`\\wsl$\` 走 9p 文件服务直接枚举 —— 不起任何进程，启动那一下不会闪控制台窗。
+            // 交回来的仍是「VM 路径 + 字节数」，后面的判据一个字不用改（与 find -printf '%s %p' 那趟同形）。
+            var files = TryScanNinferWslByUnc(distro, dir);
+            if (files is null)
             {
-                LogN($"WSL 侧扫描没做成（wsl.exe 退出码 {code}）：先按段列出来，起服务前会再核一次件在不在");
-                return;
+                if (!allowWslExe)
+                {
+                    _ninferWslFallbackDeferred = true;
+                    LogN(@"WSL 侧扫描：\\wsl$ 那条这次不通；静默启动期间不跑 wsl.exe（它会闪一个控制台窗），等打开主窗口再补一次");
+                    return;
+                }
+                // 2026-10-12：`-printf '%s %p\n'` 顺带把字节数带回来（占用估算那格要用；GNU find 才认，Ubuntu-24.04 实测可用）。
+                var (code, output) = RunWslCapture($"-d {WslQuote(distro)} find {WslQuote(dir)} -type f -name \"*.ninfer\" -printf '%s %p\\n' 2>/dev/null", 60_000);   // DEC-136（C-11）：目录也要引号 + 给上限
+                if (code != 0)
+                {
+                    LogN($"WSL 侧扫描没做成（wsl.exe 退出码 {code}）：先按段列出来，起服务前会再核一次件在不在");
+                    return;
+                }
+                files = NinferWslScanRows(output)
+                            .Where(f => f.File.EndsWith(".ninfer", StringComparison.OrdinalIgnoreCase)).ToList();
             }
-            var files = NinferWslScanRows(output)
-                        .Where(f => f.File.EndsWith(".ninfer", StringComparison.OrdinalIgnoreCase)).ToList();
-            if (IsDisposed) return;
-            try { BeginInvoke(new Action(() =>
-            {
-                _ninferWslFiles = files;
-                _ninferWslScanned = true;
-                LogN($"已扫描 WSL 侧 {files.Count} 个 .ninfer 件（{distro}:{dir}；带得到字节数的 {files.Count(f => f.Bytes > 0)} 个）");
-                RefreshModels(NinferKey);       // 件在不在现在判得准了，重列一遍（只重扫 Ninfer，DEC-097⑤）
-            })); } catch { /* 窗口已销毁 */ }
+            ApplyNinferWslScan(files, distro, dir);
         });
+    }
+
+    /// <summary>扫描结果落地 —— 两条路（UNC / wsl.exe）共用这一个收口：日志那一句与"重列 Ninfer 页"都只在这儿写一次。</summary>
+    void ApplyNinferWslScan(List<(string File, long Bytes)> files, string distro, string dir)
+    {
+        if (IsDisposed) return;
+        try { BeginInvoke(new Action(() =>
+        {
+            _ninferWslFiles = files;
+            _ninferWslScanned = true;
+            _ninferWslFallbackDeferred = false;
+            LogN($"已扫描 WSL 侧 {files.Count} 个 .ninfer 件（{distro}:{dir}；带得到字节数的 {files.Count(f => f.Bytes > 0)} 个）");
+            RefreshModels(NinferKey);       // 件在不在现在判得准了，重列一遍（只重扫 Ninfer，DEC-097⑤）
+        })); } catch { /* 窗口已销毁 */ }
     }
 
     /// <summary>解析那趟 find 的输出（`-printf '%s %p\n'` 的「字节数 路径」）。认不出字节数的行按"只有路径"收下
@@ -132,5 +165,56 @@ public partial class MainForm
         }
         return rows;
     }
+
+    // ---------------- 不走 wsl.exe 的那条路（BUG-086：`\\wsl$\` 直读，开机那一瞬不闪控制台窗） ----------------
+
+    /// <summary>VM 里的目录 → Windows 侧 `\\wsl$\&lt;distro&gt;\…`。空串 = 形状不像 Linux 绝对路径
+    /// （不猜：交回退那条，宁可多跑一趟 wsl.exe 也不认错路径）。</summary>
+    internal static string NinferWslUncDir(string distro, string vmDir)
+    {
+        var d = (distro ?? "").Trim();
+        var raw = (vmDir ?? "").Trim().Replace('\\', '/');
+        if (d.Length == 0 || raw.Length == 0 || raw[0] != '/') return "";   // 只认 Linux 绝对路径
+        return @"\\wsl$\" + d + raw.TrimEnd('/').Replace('/', '\\');
+    }
+
+    /// <summary>UNC 下枚举到的文件 → VM 里的写法（段里 `file` 就是这个形状，判据按它逐字比）。
+    /// <paramref name="relative"/> = 相对那格目录的 Windows 路径（含子目录）。</summary>
+    internal static string NinferWslVmPath(string vmDir, string relative)
+    {
+        var root = (vmDir ?? "").Trim().Replace('\\', '/').TrimEnd('/');
+        var rel = (relative ?? "").Trim().Replace('\\', '/').TrimStart('/');
+        if (rel.Length == 0) return root.Length == 0 ? "/" : root;
+        // 根目录那一格（`/`）裁掉尾斜杠后是空串 —— 那种要补回一个，别拼成相对路径
+        return root.Length == 0 ? "/" + rel : root + "/" + rel;
+    }
+
+    /// <summary>WSL 侧清单：直接读 `\\wsl$\&lt;distro&gt;\…`（9p 文件服务）递归找 `*.ninfer`，顺手带字节数。
+    /// 返回 null = 这条路这次走不通（发行版没起过 / 名字不对 / `\\wsl$` 不可用 / 读不动），调用点自行回退 wsl.exe。
+    /// **为什么值得这一趟**：wsl.exe 是控制台程序，WSL2 冷启动那一下会闪一个黑框；开机静默启动时最刺眼（BUG-086）。</summary>
+    internal static List<(string File, long Bytes)>? TryScanNinferWslByUnc(string distro, string vmDir)
+    {
+        var unc = NinferWslUncDir(distro, vmDir);
+        if (unc.Length == 0) return null;
+        try
+        {
+            if (!Directory.Exists(unc)) return null;          // 不可达就当没这条路（别让它去等 SMB 超时）
+            var rootLen = unc.TrimEnd('\\').Length + 1;
+            var rows = new List<(string File, long Bytes)>();
+            foreach (var full in Directory.EnumerateFiles(unc, "*.ninfer", SearchOption.AllDirectories))
+            {
+                long bytes = 0;
+                try { bytes = new FileInfo(full).Length; } catch { /* 量不到就 0 = 尺寸那格空着 */ }
+                var rel = full.Length >= rootLen ? full[rootLen..] : Path.GetFileName(full);
+                rows.Add((NinferWslVmPath(vmDir, rel), bytes));
+            }
+            rows.Sort((a, b) => string.CompareOrdinal(a.File, b.File));   // 次序只影响日志美观，排一下更好对账
+            return rows;
+        }
+        catch { return null; }                                // 读不动 = 走回退那一趟（口径同"判不了就不判"）
+    }
+
+    /// <summary>自检接缝：走一次真路径 <see cref="RefreshNinferWslArtifacts"/>（闸门与证人位都在本体那一个入口上）。</summary>
+    internal void RefreshNinferWslArtifactsForTest() => RefreshNinferWslArtifacts();
 
 }

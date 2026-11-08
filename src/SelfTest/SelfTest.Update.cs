@@ -96,12 +96,12 @@ internal static partial class SelfTest
             }
 
             // --- ④（DEC-049）llama.cpp 更新：先离线验纯函数，再验真实网络通路 ---
-            const string llamaDir = @"D:\llama-b11259-bin-win-cuda-13.4-x64";
+            const string llamaDir = @"D:\llama-b11259-bin-win-cuda-13.5-x64";
             Check("④ 从目录名推出要下的包后缀",
-                MainForm.LlamaAssetSuffix(llamaDir) == "bin-win-cuda-13.4-x64", MainForm.LlamaAssetSuffix(llamaDir));
+                MainForm.LlamaAssetSuffix(llamaDir) == "bin-win-cuda-13.5-x64", MainForm.LlamaAssetSuffix(llamaDir));
             Check("④ 新目录名只换 build 号（同父目录同后缀，旧目录不动）",
-                MainForm.LlamaNewDirName(llamaDir, "b11368") == @"llama-b11368-bin-win-cuda-13.4-x64"
-                && MainForm.LlamaNewDirName(llamaDir, "v0.5.0-b11368") == @"llama-b11368-bin-win-cuda-13.4-x64",
+                MainForm.LlamaNewDirName(llamaDir, "b11368") == @"llama-b11368-bin-win-cuda-13.5-x64"
+                && MainForm.LlamaNewDirName(llamaDir, "v0.5.0-b11368") == @"llama-b11368-bin-win-cuda-13.5-x64",
                 MainForm.LlamaNewDirName(llamaDir, "b11368"));
             Check("④ 更新源填网页地址或 api 地址都能认（认不出返回空）",
                 MainForm.LlamaReleasesApi("https://github.com/ggml-org/llama.cpp/releases")
@@ -115,21 +115,21 @@ internal static partial class SelfTest
                 && MainForm.LlamaBuildOf("v0.5.0-b11259") == 11259 && MainForm.LlamaBuildOf("") < 0);
             const string relJson = """
                 [
-                  {"tag_name":"b99999","draft":true,"prerelease":true,"assets":[{"name":"llama-b99999-bin-win-cuda-13.4-x64.zip","browser_download_url":"x"}]},
+                  {"tag_name":"b99999","draft":true,"prerelease":true,"assets":[{"name":"llama-b99999-bin-win-cuda-13.5-x64.zip","browser_download_url":"x"}]},
                   {"tag_name":"v0.5.0","draft":false,"prerelease":false,"published_at":"2026-09-23T20:50:06Z","assets":[]},
                   {"tag_name":"b11368","draft":false,"prerelease":true,"published_at":"2026-10-03T02:35:41Z","body":"notes",
                    "assets":[
-                     {"name":"cudart-llama-bin-win-cuda-13.4-x64.zip","browser_download_url":"cudart"},
+                     {"name":"cudart-llama-bin-win-cuda-13.5-x64.zip","browser_download_url":"cudart"},
                      {"name":"llama-b11368-bin-win-cuda-12.4-x64.zip","browser_download_url":"wrong-cuda"},
-                     {"name":"llama-b11368-bin-win-cuda-13.4-x64.zip","browser_download_url":"https://example.com/right.zip",
+                     {"name":"llama-b11368-bin-win-cuda-13.5-x64.zip","browser_download_url":"https://example.com/right.zip",
                       "digest":"sha256:1f438d5f2551f9a7a0b52ec42be5534c7e1463b9de43221b58de52fe014a4de3","size":388231471}]},
-                  {"tag_name":"b11000","draft":false,"prerelease":true,"assets":[{"name":"llama-b11000-bin-win-cuda-13.4-x64.zip","browser_download_url":"older"}]}
+                  {"tag_name":"b11000","draft":false,"prerelease":true,"assets":[{"name":"llama-b11000-bin-win-cuda-13.5-x64.zip","browser_download_url":"older"}]}
                 ]
                 """;
-            var pick = MainForm.ParseLlamaRelease(relJson, "bin-win-cuda-13.4-x64");
+            var pick = MainForm.ParseLlamaRelease(relJson, "bin-win-cuda-13.5-x64");
             Check("④ 挑版本：跳过草稿与 v0.5.0 那种没有 Windows 资产的标签，按后缀取对的那只包",
                 pick.Tag == "b11368" && pick.AssetUrl == "https://example.com/right.zip"
-                && pick.AssetName == "llama-b11368-bin-win-cuda-13.4-x64.zip" && pick.Published.StartsWith("2026-10-03"),
+                && pick.AssetName == "llama-b11368-bin-win-cuda-13.5-x64.zip" && pick.Published.StartsWith("2026-10-03"),
                 pick.Tag + " / " + pick.AssetName + " / " + pick.AssetUrl);
             Check("④ 后缀取不到时退化成任意 zip（不误挑 cudart）",
                 MainForm.ParseLlamaRelease(relJson, "").AssetName.StartsWith("llama-", StringComparison.OrdinalIgnoreCase),
@@ -142,13 +142,34 @@ internal static partial class SelfTest
             const string relNoDigest = """
                 [
                   {"tag_name":"b11368","draft":false,"prerelease":true,"published_at":"2026-10-03T02:35:41Z","body":"notes",
-                   "assets":[{"name":"llama-b11368-bin-win-cuda-13.4-x64.zip","browser_download_url":"u"}]}
+                   "assets":[{"name":"llama-b11368-bin-win-cuda-13.5-x64.zip","browser_download_url":"u"}]}
                 ]
                 """;
-            var noDigest = MainForm.ParseLlamaRelease(relNoDigest, "bin-win-cuda-13.4-x64");
+            var noDigest = MainForm.ParseLlamaRelease(relNoDigest, "bin-win-cuda-13.5-x64");
             Check("④ 上游没给 digest/size 时按「没这条校验」处理（空串 + 0，不误杀也不误判通过）",
                 noDigest.Sha256 == "" && noDigest.Size == 0 && noDigest.Tag == "b11368",
                 noDigest.Sha256 + " / " + noDigest.Size);
+            // DEC-214：未来防呆——上游把用户这个 CUDA 版本砍了（13.4 没了，只剩 13.5 与 12.4），
+            // 检查应当放宽到同架构（x64）任意 CUDA 版本、取最高 CUDA 那只，且新目录名跟着挑到的资产走（不写死旧号）。
+            const string relJsonBumped = """
+                [
+                  {"tag_name":"b12198","draft":false,"prerelease":true,"published_at":"2026-11-08T02:35:41Z","body":"notes",
+                   "assets":[
+                     {"name":"cudart-llama-bin-win-cuda-12.4-x64.zip","browser_download_url":"cudart"},
+                     {"name":"llama-b12198-bin-win-cuda-12.4-x64.zip","browser_download_url":"cuda124"},
+                     {"name":"llama-b12198-bin-win-cuda-13.5-x64.zip","browser_download_url":"https://example.com/right.zip",
+                      "digest":"sha256:aa","size":399000000}]}
+                ]
+                """;
+            var bump = MainForm.ParseLlamaRelease(relJsonBumped, "bin-win-cuda-13.4-x64");
+            Check("④ 上游砍掉本地 CUDA 版本时放宽匹配：取同架构最高 CUDA（13.5）那只，不误挑 12.4 / cudart",
+                bump.Tag == "b12198" && bump.AssetName == "llama-b12198-bin-win-cuda-13.5-x64.zip"
+                && bump.AssetSuffix == "bin-win-cuda-13.5-x64",
+                bump.Tag + " / " + bump.AssetName + " / " + bump.AssetSuffix);
+            Check("④ 放宽匹配后新目录名跟着挑到的资产走（13.5，不写死本地 13.4）",
+                MainForm.LlamaNewDirName(@"D:\llama-b11259-bin-win-cuda-13.4-x64", "b12198", bump.AssetSuffix)
+                    == @"llama-b12198-bin-win-cuda-13.5-x64",
+                MainForm.LlamaNewDirName(@"D:\llama-b11259-bin-win-cuda-13.4-x64", "b12198", bump.AssetSuffix));
             var llamaApi = MainForm.LlamaReleasesApi(new Settings().LlamaUpdateUrl);
             var llamaTmp = MainForm.Scratch("llama-selftest-releases.json");
             // 2026-10-22（他问"自检为什么这么久"）：这一条以前走 `Net.Download` —— 那是给更新链下载几百 MB 包用的

@@ -140,7 +140,7 @@ public class Settings
     public bool LlamaFlashAttn { get; set; }                 // llama 高级区「flash-attn」两态开关 = 段里的 flash-attn（DEC-079；界面载体，不落 [Current]）
     // —— llama.cpp Tab ——
     // M1 已接上：这些项驱动 llama-server 的拉起（合并 ini 覆盖、--models-max、--sleep-idle-seconds）。
-    public string LlamaDir { get; set; } = @"D:\llama-b11259-bin-win-cuda-13.4-x64"; // 含 llama-server.exe
+    public string LlamaDir { get; set; } = @"D:\llama-b11259-bin-win-cuda-13.5-x64"; // 含 llama-server.exe
     public string RouterIni { get; set; } = "";                                     // 已退役（DEC-079）：家底固定 = exe 同目录的 llama_models.ini，见 MainForm.RouterIniPath()。留着只为读旧 ini 里那条老路径，一次性把文件搬到实跑目录（搬完不再写回 [Current]）
     public string LlamaModelsDir { get; set; } = "";                                 // 可选；不参与壳的扫描，也不传给 server（DEC-012）
     public string LlamaInternalPort { get; set; } = "";                              // 留空 = 公开端口 + 2

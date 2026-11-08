@@ -93,29 +93,37 @@ internal static partial class SelfTest
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(iniPath) ?? ".");
-                // backend = win 两段：WIN 侧默认开着（NinferWinOn 出厂 true），两件都会进列表。
-                File.WriteAllText(iniPath,
-                    "[nr1]\nbackend = win\nfile = C:\\no-such\\a.ninfer\n\n[nr2]\nbackend = win\nfile = C:\\no-such\\b.ninfer\n",
-                    new UTF8Encoding(false));
                 using var f = new MainForm();
                 f.CreateControl();
                 f.SetModuleEnabledForTest(MainForm.NinferKey, true);         // 这一组用例要先保证模块开着（只改内存）
+                // 2026-10-29（他问「为什么要固定？不是应该跟随上一次的选择吗」—— 对，别钉）：
+                // 这两段的 backend 就写**他当前选的那一侧**。原先写死 `backend = win`，前提是"激活后端 = WIN"，
+                // 而他 ini 里停在 WSL 时（今天查箭头那条 bug 就是）这两段一件都进不了列表 → 下面选不中 nr1、
+                // 用例因"他机器上的配置"红掉（BUG-052 同族）。跟随当前侧之后两边都成立：
+                // 激活后端按定义就是启用着的那一侧（ActiveNinferBackend 的兜底），所以 NinferBackendOn 那道门也过。
+                var be = f.NinferBackendForTest;
+                File.WriteAllText(iniPath,
+                    "[nr1]\nbackend = " + be + "\nfile = " + (be == NinferIni.BackendWsl ? "/no-such/a.ninfer" : "C:\\no-such\\a.ninfer")
+                    + "\n\n[nr2]\nbackend = " + be + "\nfile = " + (be == NinferIni.BackendWsl ? "/no-such/b.ninfer" : "C:\\no-such\\b.ninfer") + "\n",
+                    new UTF8Encoding(false));
                 f.RefreshModelsForTest(MainForm.NinferKey);
                 int n0 = f.NinferModelsForTest.Count;
                 f.SwitchModuleRealForTest(MainForm.NinferKey);               // 让它成为激活页，才走得进"重摆下拉"那半条
                 f.SelectModelForTest("nr1");
                 bool selWas = f.SelectedTagForTest == "nr1";
                 // 删掉正在选中的那一件（他实跑最容易踩的就是"删的就是当前这件"）
-                File.WriteAllText(iniPath, "[nr2]\nbackend = win\nfile = C:\\no-such\\b.ninfer\n", new UTF8Encoding(false));
+                File.WriteAllText(iniPath,
+                    "[nr2]\nbackend = " + be + "\nfile = " + (be == NinferIni.BackendWsl ? "/no-such/b.ninfer" : "C:\\no-such\\b.ninfer") + "\n",
+                    new UTF8Encoding(false));
                 File.SetLastWriteTimeUtc(iniPath, DateTime.UtcNow.AddSeconds(5));
                 var hits = f.RescanModelsIfHomeChanged(MainForm.NinferKey);
                 var tags = f.NinferModelsForTest.Select(m => m.Tag).ToList();
                 Check("DEC-222 判据14d Ninfer：删掉一段之后拉起服务那一刻列表跟着少",
                     hits && n0 >= 2 && tags.Count == n0 - 1 && !tags.Contains("nr1"),
-                    $"hit={hits} n0={n0} 现在={string.Join("、", tags)}");
+                    $"hit={hits} n0={n0} 后端={be} 现在={string.Join("、", tags)}");
                 Check("DEC-222 判据14e 删的正是选中那件：重摆之后落到还剩下的那件（不留一枚指向已删段的幽灵选中）",
                     selWas && f.SelectedTagForTest == "nr2",
-                    $"原来选中 nr1={selWas}｜现在={f.SelectedTagForTest}");
+                    $"原来选中 nr1={selWas}｜后端={be}｜现在={f.SelectedTagForTest}");
             }
             finally
             {

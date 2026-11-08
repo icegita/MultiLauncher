@@ -43,6 +43,25 @@ internal static partial class SelfTest
                 uiForm.SetModuleEnabledForTest(strata: true, llama: true);
                 uiForm.SwitchModuleForTest("strata");
                 W($"确定性状态: strata={uiForm.ModelsForTest.Count} llama={uiForm.LlamaModelsForTest.Count} active={uiForm.ActiveModuleForTest} RouterIni={uiForm.RouterIniForTest}");
+                // BUG-088（他报「退出程序重新运行，还是有黑框一闪而过」）：勾了「启动时隐藏到托盘」时，
+                // 老做法是 Shown 里 Hide() —— 那一帧主窗**已经画到屏幕上**（深色窗体 = 他说的"黑框"）。
+                // 现在 Show 之前先挪到屏幕外 + 任务栏不留按钮，Hide 完再搬回来。这两条钉住那两步。
+                uiForm.PrepareHiddenStart();
+                var hiddenPos = uiForm.Location;
+                var hiddenTaskbar = uiForm.ShowInTaskbar;
+                uiForm.RestoreAfterHiddenStart();
+                Check("BUG-088 「启动时隐藏到托盘」在 Show 之前就挪到屏幕外 + 任务栏不留按钮（一帧都不许露脸）",
+                    !hiddenTaskbar && hiddenPos.X == -32000 && hiddenPos.Y == -32000,
+                    $"ShowInTaskbar={hiddenTaskbar} 位置={hiddenPos}");
+                Check("BUG-088 藏进托盘之后把位置搬回来（下一次 Show 不能还留在那个屏幕外坐标）",
+                    uiForm.ShowInTaskbar && uiForm.Location.X != -32000 && uiForm.Location.Y != -32000,
+                    $"ShowInTaskbar={uiForm.ShowInTaskbar} 位置={uiForm.Location}");
+                // BUG-089（他紧接着报「标题栏怎么搞成白色了」）：`ShowInTaskbar` 一变 WinForms 就重建窗口句柄，
+                // 而 DWM 的深色标题栏挂在**旧句柄**上 —— 恢复那一步不补一次，标题栏就退回系统白。
+                var darkHit = CodeHitsBetween("MainForm.Tray.cs", "internal void RestoreAfterHiddenStart()",
+                                              "void RestoreWindowBounds()", "UiDark.Apply(this)");
+                Check("BUG-089 恢复 ShowInTaskbar 之后必须紧跟一次 UiDark.Apply（句柄重建会把深色标题栏丢掉）",
+                    darkHit is -1 or >= 1, "源码命中 " + darkHit);
                 // 更名落地（2026-10-02，DEC-030）：显示名 = MultiLauncher 混合启动器、版本读 csproj（原 MixLauncher 作废）
                 Check("窗口标题 = MultiLauncher 混合启动器 + 版本（不再有 Strata&llama）",
                     uiForm.Text.StartsWith("MultiLauncher 混合启动器  v", StringComparison.Ordinal)

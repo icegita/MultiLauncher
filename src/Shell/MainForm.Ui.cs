@@ -131,12 +131,15 @@ public partial class MainForm
 
     /// <summary>两枚小按钮的颜色随"当前模块探没探到新版本"走（DEC-108）：灰 = 没探到；品牌绿 = 探到过
     /// （或被跳过那一版在）。两个挂点：切页/状态刷新（RefreshRunStateView）与更新流程各广播点（PokeUpdateUi）——
-    /// 于是"开过更新窗、查到了新版"这之后左栏那枚会自己转绿，不用重开界面。</summary>
+    /// 于是"开过更新窗、查到了新版"这之后左栏那枚会自己转绿，不用重开界面。
+    /// 2026-10-29（他实跑点名）：判据从 `Offer().Show` 改成模块表那一行 <see cref="ModuleView.UpdateArrowLit"/> ——
+    /// **按当前后端那一侧算**。Ninfer 一个模块两条独立更新链（WIN 换 exe / WSL 重编），以前这里恒问 WIN 那条的
+    /// offer，于是"WIN 探到新版"之后切到 WSL，箭头照样亮着，与这枚按钮点下去开的是 WSL 那扇窗对不上。</summary>
     void RefreshSidebarUpdateButtons()
     {
         if (IsDisposed || _kvUpdateBtns.Count == 0) return;
         if (InvokeRequired) { try { BeginInvoke(new Action(RefreshSidebarUpdateButtons)); } catch { } return; }
-        bool green = View(_activeModule).Offer().Show;
+        bool green = ActiveView.UpdateArrowLit();
         foreach (var b in _kvUpdateBtns.Values)
             if (b.NewVersion != green) { b.NewVersion = green; b.Invalidate(); }
     }

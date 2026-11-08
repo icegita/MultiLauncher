@@ -199,6 +199,23 @@ internal static partial class Dialogs
         return (scrollable, after > 0, total, view, after);
     }
 
+    // BUG-091（他实跑：说明最后几个字被滚动条压住）：滑条是**盖**在正文上画的，所以正文得自己让位。
+    // 判据 = 排版右边界（PadX + Avail）落在滑条左边缘之内 —— 同一个父坐标系里量，不靠看截图。
+    internal static (int TextRight, int BarLeft, int Reserve) ProbeDetailGutter(Form owner, string notes)
+    {
+        var s = BuildUpdateDetail(owner, "vX", "vY", notes);
+        s.StartPosition = FormStartPosition.Manual;
+        s.Location = new Point(-4000, -4000);
+        s.Show(owner);
+        for (int i = 0; i < 6; i++) { Application.DoEvents(); Thread.Sleep(40); }
+        var box = s.Body.Controls.OfType<MdScroll>().First();
+        var r = (box.Doc.ContentRightForTest, box.BarLeftForTest, box.Doc.ReserveRight);
+        s.Close();
+        for (int i = 0; i < 3; i++) { Application.DoEvents(); Thread.Sleep(30); }
+        s.Dispose();
+        return r;
+    }
+
     // DEC-092 第 3 条（用户："里面的内容现在无法选中复制了"）：自绘的 MdDoc 补了拖选/Ctrl+A/Ctrl+C 之后，
     // 断言要打在"选中的就是看到的那段字"上。两条纪律：
     //   · **不真写剪贴板** —— 自检跑在用户机器上，占了他的剪贴板等于改他的机器状态，
@@ -285,7 +302,7 @@ internal static partial class Dialogs
             + "**Updating:** run `UPDATE.bat`. Setup installs engine 0.1.38.\n");
         PreviewCenterLines = true;
         Confirm(owner, "llama.cpp 已更新到 b11368",
-            "新目录：D:\\llama-b11368-bin-win-cuda-13.4-x64（设置里的目录已切过去）",
+            "新目录：D:\\llama-b11368-bin-win-cuda-13.5-x64（设置里的目录已切过去）",
             "刚下载的压缩包 145.8 MB 要删掉吗？旧目录原样保留，随时能改回去。", yes: "删除", no: "保留");
         Shell.Preview = false;
         return Shell.PreviewSeq;

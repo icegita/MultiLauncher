@@ -156,6 +156,12 @@ public partial class MainForm
         //     三条链的"这一窗要读的六件事"全部落在下面这几行里；动作仍转回 MainForm 现成出口）——
         /// 这一版有没有新版本 / 是不是被跳过的那一版（更新窗第二、三行的数据源）
         public required Func<UpdateOffer> Offer { get; init; }
+        /// <summary>左栏「版本」行那枚小箭头的亮/灰（DEC-108，2026-10-29 修正口径）：**当前模块当前这一侧**探没探到新版本。
+        /// 单链模块 = 自己那条 offer（`Offer().Show`）；**Ninfer 必须按后端方块停的那一侧算** ——
+        /// 它一个模块两条互不相干的更新链（WIN 换 exe / WSL 里重编），拿 WIN 那条的 offer 当判据，
+        /// 就会出现"WIN 探到新版、切到 WSL 箭头还亮着"，而这枚箭头点下去开的正是当前那一侧的窗。
+        /// 另立一格而不再复用 `Offer()`：`Offer()` 还被 WIN 那扇更新窗与设置页读，不能被当前后端带着走。</summary>
+        public required Func<bool> UpdateArrowLit { get; init; }
         /// 更新窗第二行那句状态话与它的颜色（"检查中 / 已是最新 / 检查失败"…）
         public required Func<(string Memo, Color Color)> StatusMemo { get; init; }
         /// 「版本」那一行的当前值（Strata = 源码 + 引擎两档；llama = 目录名里的 b 号；Ninfer = 本地哈希反查资产表）
@@ -352,6 +358,7 @@ public partial class MainForm
         CheckUpdateNow = UpdateClick,
         UpdateOfferSeen = () => _remoteTag.Length > 0,
         Offer = UpdateOfferForSettings,
+        UpdateArrowLit = () => UpdateOfferForSettings().Show,
         StatusMemo = UpdateStatusForSettings,
         CurrentVersion = () => { var (src, eng) = VersionsForSettings(); return $"源码 {src} · 引擎 {eng}"; },
         ShowUpdateDetail = ShowUpdateDetail,
@@ -437,6 +444,7 @@ public partial class MainForm
         CheckUpdateNow = LlamaCheckUpdate,
         UpdateOfferSeen = () => _llamaRemoteTag.Length > 0,
         Offer = LlamaUpdateOfferForSettings,
+        UpdateArrowLit = () => LlamaUpdateOfferForSettings().Show,
         StatusMemo = LlamaUpdateStatusForSettings,
         CurrentVersion = LlamaVersionForSettings,
         ShowUpdateDetail = ShowLlamaUpdateDetail,
@@ -562,6 +570,7 @@ public partial class MainForm
         CheckUpdateNow = NinferCheckUpdate,
         UpdateOfferSeen = () => _ninferRemoteTag.Length > 0,
         Offer = NinferUpdateOfferForSettings,
+        UpdateArrowLit = NinferUpdateArrowLit,
         StatusMemo = NinferUpdateStatusForSettings,
         CurrentVersion = NinferVersionForSettings,
         ShowUpdateDetail = ShowNinferUpdateDetail,

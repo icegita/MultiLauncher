@@ -44,10 +44,14 @@ public partial class MainForm
 
     public void ShowMainWindow()
     {
+        _startHidden = false;          // BUG-088：已经从托盘点开了，"启动即隐藏"那面旗子不再生效
         Show();
         WindowState = FormWindowState.Normal;
         Activate();
         ApplyPendingFollowPage();      // DEC-125①：藏在托盘/最小化期间被唤醒起来的那一件，现在才跟过去
+        // BUG-086：静默启动那阵把 wsl.exe 那趟压下来了（`\\wsl$` 不通才会走到这儿）—— 窗口到眼前了再补一次，
+        // 别让那个黑框落在开机那一瞬。一个人只补一次（补完标志就落回去）。
+        if (_ninferWslFallbackDeferred) { _ninferWslFallbackDeferred = false; RefreshNinferWslArtifacts(); }
     }
 
     // DEC-125①：从最小化恢复也算"窗口到眼前了"（ShowMainWindow 覆盖不到用户点任务栏那一条）。
@@ -127,6 +131,28 @@ public partial class MainForm
         if (p is null || p.HasExited) return;
         _strataStopping = true;
         try { p.Kill(true); } catch { /* 已经退了 */ }
+    }
+
+    /// <summary>「启动时隐藏到托盘」的那一帧（BUG-088）：照常走 Show / Shown 那条链（自启服务、扫描、托盘都靠它挂上），
+    /// 但窗口先挪到屏幕外、任务栏也不留按钮 —— 于是他一帧都看不见它。</summary>
+    internal void PrepareHiddenStart()
+    {
+        ShowInTaskbar = false;
+        if (WindowState != FormWindowState.Normal) WindowState = FormWindowState.Normal;   // 最大化会铺满屏幕，先归一
+        StartPosition = FormStartPosition.Manual;
+        Location = new Point(-32000, -32000);
+    }
+
+    /// <summary>藏进托盘之后把窗口搬回它该在的地方（下一次 Show 就是原位原尺寸）。</summary>
+    internal void RestoreAfterHiddenStart()
+    {
+        // BUG-089：`ShowInTaskbar` 一变，WinForms 会**重建窗口句柄** —— 而深色标题栏（DWM 那几条属性）
+        // 挂在**旧句柄**上，重建后就退回系统白。所以这一句必须紧跟着补一次（此刻窗口还藏着，重建没有视觉影响）。
+        ShowInTaskbar = true;
+        UiDark.Apply(this);
+        StartPosition = FormStartPosition.CenterScreen;   // 与构造里那句一致（没存过尺寸的新用户走这条）
+        Location = new Point(0, 0);                       // 先离开屏幕外那个坐标
+        RestoreWindowBounds();                            // 存过尺寸/位置就按它落位（内部会把 StartPosition 改回 Manual）
     }
 
     void RestoreWindowBounds()

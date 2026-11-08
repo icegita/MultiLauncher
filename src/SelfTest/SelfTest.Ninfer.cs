@@ -243,6 +243,31 @@ internal static partial class SelfTest
                     && scanRows[0].File == "/m/a.ninfer" && scanRows[0].Bytes == 18210531328
                     && scanRows[1].File == "/m/b.ninfer" && scanRows[1].Bytes == 0,
                     string.Join(" | ", scanRows.Select(r => r.File + "=" + r.Bytes)));
+                // ============ BUG-086：开机静默启动不再起 wsl.exe（`\\wsl$\` 直读那条路）============
+                Check(@"BUG-086 `\\wsl$` 路径换算：VM 绝对路径 → UNC，尾斜杠不多不少；相对路径 / 空发行版一律交回空串（不猜，交回退那条）",
+                    MainForm.NinferWslUncDir("Ubuntu-24.04", "/home/user/models") == @"\\wsl$\Ubuntu-24.04\home\user\models"
+                    && MainForm.NinferWslUncDir("Ubuntu-24.04", "/home/user/models/") == @"\\wsl$\Ubuntu-24.04\home\user\models"
+                    && MainForm.NinferWslUncDir("", "/home/user/models") == ""
+                    && MainForm.NinferWslUncDir("Ubuntu-24.04", "models") == "",
+                    "[" + MainForm.NinferWslUncDir("Ubuntu-24.04", "/home/user/models") + "]");
+                Check("BUG-086 UNC 下枚举到的文件要按 VM 的写法交回去（段里 `file` 就是这个形状，判据按它逐字比）",
+                    MainForm.NinferWslVmPath("/home/user/models", "sub\\a.ninfer") == "/home/user/models/sub/a.ninfer"
+                    && MainForm.NinferWslVmPath("/home/user/models/", "/a.ninfer") == "/home/user/models/a.ninfer"
+                    && MainForm.NinferWslVmPath("/", "a/b.ninfer") == "/a/b.ninfer",
+                    "[" + MainForm.NinferWslVmPath("/home/user/models", "sub\\a.ninfer") + "]");
+                Check("BUG-086 UNC 那条走不通时返回 null（不抛、不猜路径）—— 调用点据此回退 wsl.exe 那一趟",
+                    MainForm.TryScanNinferWslByUnc("", "/home/user/models") is null
+                    && MainForm.TryScanNinferWslByUnc("Ubuntu-24.04", "models") is null);
+                {
+                    // 接线判据：Shown 那条链必须把「这一趟不许起 wsl.exe」传下去（静默启动 = --tray 那一次）
+                    var wslHit = CodeHitsBetween("MainForm.Controls.cs", "Shown += (_, _) =>", "RestoreAfterHiddenStart();",
+                                                 "allowWslExe: !_start" + "Hidden");
+                    var wslSkip0 = MainForm.NinferWslScanSkippedForTest;
+                    using (var fWsl = new MainForm()) fWsl.RefreshNinferWslArtifactsForTest();
+                    Check("BUG-086 静默启动那一条真传下去了（allowWslExe: !_startHidden），且测试态一次都不进 VM（闸 + 证人位）",
+                        wslHit is -1 or >= 1 && MainForm.NinferWslScanSkippedForTest > wslSkip0,
+                        $"源码命中 {wslHit}｜挡下 {wslSkip0}→{MainForm.NinferWslScanSkippedForTest}");
+                }
                 Check("显存互斥：排队超时默认 300 秒、可配到 600，表外值回默认（DEC-083 第 6 条；DEC-157 起三模块共用）",
                     MainForm.GpuWakeWaitSeconds("") == 300
                     && MainForm.GpuWakeWaitSeconds("600") == 600
