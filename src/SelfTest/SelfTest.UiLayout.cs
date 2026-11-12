@@ -81,8 +81,9 @@ internal static partial class SelfTest
                 // 全是读侧与外观收口、没有新功能 → 按 DEC-110 只升末位（0.1.8.6 → 0.1.8.7）。
                 // DEC-222（2026-10-25）：模型列表增删的缺口补齐（拉起服务那一刻按列表戳重扫，三模块同形）
                 // + 顺带修掉 DEC-103 / DEC-098③ 两条既有红 —— 同样是修复性批次 → 再升末位（0.1.8.7 → 0.1.8.8）。
-                Check("版本号 = v0.1.8.8（csproj 0.1.8.8；模型列表重扫 + 两条既有红那批，按末位）",
-                    MainForm.VersionTag() == "v0.1.8.8", MainForm.VersionTag());
+                // DEC-227（2026-11-12）：网关「转发失败」日志尾巴「。.」收成一个句号（纯文案）→ 再升末位（0.1.8.9 → 0.1.8.10）。
+                Check("版本号 = v0.1.8.10（csproj 0.1.8.10；网关日志文案收尾那批，按末位）",
+                    MainForm.VersionTag() == "v0.1.8.10", MainForm.VersionTag());
                 Check("版本显示不吃进提交号与空白（InformationalVersion 形如 0.1.8.3+<sha>，'+' 之后必须切干净）",
                     !MainForm.VersionTag().Contains('+') && !MainForm.VersionTag().Contains(' '), MainForm.VersionTag());
                 // DEC-180 的机器版护栏：csproj 里**只许有一个** `<Version>` 真标签。这个坑本仓库栽过两次 ——

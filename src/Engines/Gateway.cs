@@ -281,7 +281,14 @@ internal sealed class Gateway : IDisposable
         }
         catch (Exception ex)
         {
-            if (!ct.IsCancellationRequested) _log("网关转发失败: " + ex.Message);
+            // .NET 的 net_io_read/write 模板自身以 ASCII 句号收尾（"…: {0}."），而 Windows 中文消息自带「。」，
+            // 拼出来就是「。.」。这里只收掉重复的那个点（读 / 写两族都走这一行）。
+            if (!ct.IsCancellationRequested)
+            {
+                var msg = ex.Message;
+                if (msg.EndsWith("。.", StringComparison.Ordinal)) msg = msg[..^1];
+                _log("网关转发失败: " + msg);
+            }
         }
         finally
         {
