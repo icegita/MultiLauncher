@@ -327,6 +327,15 @@ public partial class MainForm
                 _ => "",
             };
             s.LayerSplit = node["layer_split"]?.GetValue<string>() ?? "";
+            // 并发数（0.1.66）：配置正主是顶层 parallel；老写法/拆分引擎可能在 args 里写 --parallel / --batch / --slots，
+            // 都认一次（三选一，按服务端 request_count 的优先级）。读不到 = 保持 Settings 的默认值。
+            s.Parallel = node["parallel"] switch
+            {
+                JsonValue pv when pv.TryGetValue<int>(out var pi) => pi.ToString(),
+                JsonValue pv => pv.ToString(),
+                null => Arg("--parallel") ?? Arg("--batch") ?? Arg("--slots") ?? s.Parallel,
+                _ => s.Parallel,
+            };
             s.ArenaPinGib = node["env"]?["STRATA_ARENA_PIN_GIB"]?.GetValue<string>() ?? "";
             s.HeadLate = node["env"]?["STRATA_HEAD_LATE"] is not null;
             return true;
@@ -493,7 +502,7 @@ public partial class MainForm
     bool ApplyStrataRecord(string tag, Settings? snap)
     {
         var s = CollectSettings();
-        // DEC-135（A-1）：先把那 16 格按回**出厂默认**，再读模板、再用快照覆盖 ——
+        // DEC-135（A-1）：先把那 17 格按回**出厂默认**，再读模板、再用快照覆盖 ——
         // 与唤醒那一条（`BuildWakeSettings`）同一次序、同一个家。少了这一步，模板里没有的那几格
         // （`ExtraArgs` 与 Context/Kv/Spec/SpecMinP/ExpertCache/Prefill/VramReserveMib）就把"上一件界面上那格"
         // 当成这一件的值；他当时点一次「保存」还会把这份幽灵值永久写进这一件的记录里。

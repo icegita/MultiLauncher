@@ -9,7 +9,7 @@ namespace MultiLauncher;
 // `data\config\strata\strata_models.ini` —— **一份**，一个模型一段（形状见 `ModelParamsIni`）：
 //
 //   [swift-iq3_xxs-512k]
-//   ApiModel=qwen3.8-flash-next-iq3_s     ← 16 格 = 界面参数，**壳写**（只改这 16 个键对应的行）
+//   ApiModel=qwen3.8-flash-next-iq3_s     ← 17 格 = 界面参数，**壳写**（只改这 17 个键对应的行）
 //   Context=524288
 //   Args1=--上游新旗标                    ← 手加参数，**你写**，壳只读、写回原样保留
 //   Args2=1
@@ -18,7 +18,7 @@ namespace MultiLauncher;
 // 为什么是 ini 不是 json（DEC-210，他点名）：JSON 少个逗号整份读不动，而"坏了不写"的纪律会让保存一直失败；
 // ini 一行一个键，改错只影响那一行（缺键 = 用默认），手感与另两份家底 ini 一致。
 // 为什么不并进产物：产物每次启动按模板重建，拿它当输入 = 自洽循环（方案 §9 的 B 方案），且 SETUP 重跑带不走新参数。
-// 代价（他 2026-10-22 明确接受，用"写前备份 + 写后读回校验"兜）：壳必须**只改自己那 16 格**，
+// 代价（他 2026-10-22 明确接受，用"写前备份 + 写后读回校验"兜）：壳必须**只改自己那 17 格**，
 // 段里的注释 / `ArgsN` / 他自建的键原样保留；文件读不动就**不写**（保存失败一次，但原件一个字节不动）。
 //
 // **内存字典 `ModelSnaps` 与全部读点一个字不动**（BuildWakeSettings / ApplyStrataRecord / 保存时写回
@@ -26,7 +26,7 @@ namespace MultiLauncher;
 //
 // 三条纪律（方案 §5 与 §6.1）：
 //   ① 写前先备份到 `data\backup\strata\`（留 3 份、名字里的时间戳 = 原件时间、后缀照源文件）；内容没变一个字节都不动；
-//   ② 写完**读回校验**：每段都要读回同样的 16 格才算写成功（A1 ①）；
+//   ② 写完**读回校验**：每段都要读回同样的 17 格才算写成功（A1 ①）；
 //   ③ 文件赢、老段只读这一次（A6）：ini 里有这段 → 以它为准；不在 → 老 `[Model:<tag>]` 段读一次、写进去。
 //      老段**不单独删**：写侧从此不再写 `[Model:*]`（BuildConfigLines），于是下一次成功的保存把整份 ini
 //      重写成不含老段的样子 —— 2026-10-22 他拍的口径就是"下次保存成功后自动删"。
@@ -54,7 +54,7 @@ public partial class MainForm
 
     internal static string ModelUiBackupPrefix(string tag) => tag + "-ui-";
 
-    /// <summary>一个模型那 16 格 → JSON 对象（只装 <see cref="ModelOwnedKeys"/>；服务级字段——端口 / 地址 /
+    /// <summary>一个模型那 17 格 → JSON 对象（只装 <see cref="ModelOwnedKeys"/>；服务级字段——端口 / 地址 /
     /// 选中指针——一个都不写，口径与原来那一段 ini 完全一致）。</summary>
     static JsonObject ModelSnapNode(Settings s)
     {
@@ -68,10 +68,10 @@ public partial class MainForm
         return o;
     }
 
-    /// <summary>一份快照 → JSON 文本（自检与"记录那一段写全 16 格"那条判据吃它）。</summary>
+    /// <summary>一份快照 → JSON 文本（自检与"记录那一段写全 17 格"那条判据吃它）。</summary>
     internal static string ModelSnapJson(Settings s) => ModelSnapNode(s).ToJsonString(IndentedJson);
 
-    /// <summary>一个模型那一组 → 一份只装着那 16 格的 Settings。表外键忽略、类型不对就整组判坏（不猜、不半份生效）。</summary>
+    /// <summary>一个模型那一组 → 一份只装着那 17 格的 Settings。表外键忽略、类型不对就整组判坏（不猜、不半份生效）。</summary>
     internal static bool TryParseModelSnapNode(JsonNode? node, out Settings s, out string error)
     {
         s = new Settings(); error = "";
@@ -102,7 +102,7 @@ public partial class MainForm
         return TryParseModelSnapNode(node, out s, out error);
     }
 
-    /// <summary>两份快照在那 16 格上是否一致（写后校验用的就是它）。</summary>
+    /// <summary>两份快照在那 17 格上是否一致（写后校验用的就是它）。</summary>
     internal static bool ModelSnapEquals(Settings a, Settings b)
     {
         foreach (var p in ModelOwnedProps)
@@ -111,7 +111,7 @@ public partial class MainForm
     }
 
     /// <summary>把磁盘上那份读成行结构（不存在 = null；读不动 = null 并往 notes 写一句）。
-    /// 写回时要拿它当基底 —— 只改壳自己那 16 格，注释 / `ArgsN` / 你自建的键原样留着。</summary>
+    /// 写回时要拿它当基底 —— 只改壳自己那 17 格，注释 / `ArgsN` / 你自建的键原样留着。</summary>
     static ModelParamsIni.Doc? ReadModelParamsDoc(List<string> notes)
     {
         var path = ModelParamsPath();
@@ -120,7 +120,7 @@ public partial class MainForm
         catch (Exception ex) { notes.Add($"{ModelParamsFileName} 读不动：{ex.Message}"); return null; }
     }
 
-    /// <summary>读 `strata_models.ini` 里各段的 16 格进字典（**文件赢**，A6）。读不动的段点名跳过、不删别的东西；
+    /// <summary>读 `strata_models.ini` 里各段的 17 格进字典（**文件赢**，A6）。读不动的段点名跳过、不删别的东西；
     /// 手加参数（`ArgsN`）不在这里处理（那是覆盖层那一头的 <see cref="ReadExtraArgsForTag"/>）。
     /// 返回读到几个模型；<paramref name="fromFiles"/> 非空时把"文件里有的 tag"记进去。</summary>
     internal static int LoadModelSnapStore(Dictionary<string, Settings> snaps, List<string> notes, HashSet<string>? fromFiles = null)
@@ -161,7 +161,7 @@ public partial class MainForm
         return bool.TryParse(t, out value);
     }
 
-    /// <summary>把字典整份写回 `strata_models.ini`：**只改每个模型那 16 格对应的行**（缺的键补上），
+    /// <summary>把字典整份写回 `strata_models.ini`：**只改每个模型那 17 格对应的行**（缺的键补上），
     /// 段里的注释 / `ArgsN` / 你自建的键一行都不动；内容没变 = 一个字节都不动；
     /// 要写就先备份（留 3 份）→ 同目录 tmp → 改名 → 逐段读回校验。
     /// 文件读不动 → **一个字节都不写**并返回 false（保存失败一次，但不会把你写的东西冲掉）。</summary>
@@ -183,7 +183,7 @@ public partial class MainForm
                 doc = read;
             }
             else doc = new ModelParamsIni.Doc();
-            // 只改自己那 16 格：其余行（注释 / ArgsN / 你自建的键 / 别的模型的段）原样留着
+            // 只改自己那 17 格：其余行（注释 / ArgsN / 你自建的键 / 别的模型的段）原样留着
             foreach (var kv in snaps.OrderBy(k => k.Key, StringComparer.OrdinalIgnoreCase))
             {
                 var pairs = new List<KeyValuePair<string, string>>();
@@ -232,7 +232,7 @@ public partial class MainForm
     }
 
     /// <summary>DEC-207 那一版的老存储（`strata_models.json`，组 = `{ui, args}`）并进 ini：
-    /// `ui` 块的 16 格 → 该段那些键；`args` 数组 → `Args1..ArgsN`。并完原件挪去备份、目录里不留两份。
+    /// `ui` 块的 17 格 → 该段那些键；`args` 数组 → `Args1..ArgsN`。并完原件挪去备份、目录里不留两份。
     /// ini 里已有的 tag 以它为准（文件赢），老 json 照样进备份 —— 不静默丢弃。返回真正并进来的模型数。</summary>
     internal static int MigrateLegacyParamsJson(Dictionary<string, Settings> snaps, List<string> notes, HashSet<string>? fromFiles = null)
     {

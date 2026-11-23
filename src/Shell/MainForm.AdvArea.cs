@@ -21,6 +21,8 @@ public partial class MainForm
         AddAdv(_advStrata, "视觉", _cboVision, "让模型读图片；模型没配视觉块时不可用（要跑 SETUP）");
         AddAdv(_advStrata, "层拆分起点", _txtLayerSplit, "--layer-split：多卡时后续卡各从第几层开始，留空 = auto");
         AddAdv(_advStrata, "arena pin (GiB)", _txtArenaPin, "STRATA_ARENA_PIN_GIB：映射主机页上限；留空 = 沿用配置里的值（本机两份配置都是 16，别删）；0/auto ≈ 不设限会崩，8 = 应急降级");
+        AddAdv(_advStrata, "并发数", _txtParallel, "同时接几条请求（Strata 0.1.66 的配置键 parallel，服务端翻成引擎的 --batch N）。"
+            + "1 = 一次一条；单卡不拆层最多 8 条（超过由引擎自行收敛并在日志说明）。留空 = 不写。上下文越大，每条请求占的 KV 越多");
         // （「思考深度」DEC-076 候选起住卡1 第三格；「附加参数」DEC-075 起住卡2 第二行；「低内存模式」整链删除——都不在高级区了）
         _advStrataToggles.Add(("KV 驻留内存", _swKvRes, "--kv-resident 32768：64K 以上上下文时把 KV 放内存", null));
         _advStrataToggles.Add(("STRATA_HEAD_LATE", _swHeadLate, "仅供 A/B 对照，正常情况下不要开", null));

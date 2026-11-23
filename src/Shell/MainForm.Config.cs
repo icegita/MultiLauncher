@@ -96,6 +96,7 @@ public partial class MainForm
         s.Vision = VisionValue();
         s.VramReserveMib = _txtVramReserve.Text.Trim();
         s.ArenaPinGib = _txtArenaPin.Text.Trim();
+        s.Parallel = _txtParallel.Text.Trim();
         s.HeadLate = _swHeadLate.Checked;
         s.ReasoningEffort = ReasoningValue();
         // —— llama.cpp 侧（独立控件）——
@@ -158,6 +159,7 @@ public partial class MainForm
         SetReasoning(s.ReasoningEffort);
         _txtVramReserve.Text = s.VramReserveMib;
         _txtArenaPin.Text = s.ArenaPinGib;
+        _txtParallel.Text = s.Parallel;
         _swHeadLate.Checked = s.HeadLate;
         // —— llama.cpp 侧（独立控件）——
         _txtPortLlama.Text = s.LlamaInternalPort;

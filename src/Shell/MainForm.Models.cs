@@ -97,7 +97,7 @@ public partial class MainForm
     internal static string SharedSettingsPath(string tag) => Path.Combine(RunProductDir(), tag + ".shared-settings.json");
 
     // A/C（2026-10-22，DEC-206/207/210）：每模型的「界面参数 + 手加参数」住**一份** `strata_models.ini`
-    // —— 一个模型一段，键名就是界面那 16 格（`Args1`/`Args2`… 是手加参数，见 ModelParamsIni）。
+    // —— 一个模型一段，键名就是界面那 17 格（`Args1`/`Args2`… 是手加参数，见 ModelParamsIni）。
     // 形状从 JSON 改成 ini 是他 2026-10-22 点名的第三版，由头很实在：**JSON 少个逗号整份读不动**，
     // 而"文件坏了不写"的纪律会让保存一直失败；ini 一行一个键，改错只影响那一行。
     // 文件名与另两个模块对齐（`llama_models.ini` / `ninfer_models.ini`）。

@@ -62,6 +62,7 @@ public partial class MainForm
     readonly RoundedTextBox _txtVramReserve = new();
     readonly RoundedTextBox _txtLayerSplit = new();
     readonly RoundedTextBox _txtArenaPin = new();
+    readonly RoundedTextBox _txtParallel = new();            // 并发数（Strata 0.1.66 的配置键 parallel，服务端翻成引擎的 --batch N）
     // （原 _swLowRam「低内存模式」开关：2026-10-04 DEC-075 整链删除）
     readonly ToggleSwitch _swKvRes = new();
     readonly ToggleSwitch _swHeadLate = new();
@@ -278,7 +279,7 @@ public partial class MainForm
         foreach (var note in MigrateLauncherLayout(_config.Current.Root))
             Log("布局搬家：" + note, "launcher");          // 跨模块的家事 → 走 launcher 通道（三页都显示，正是想要的）
         // A/C（2026-10-22，DEC-206 / DEC-207）：`[Model:<tag>]` 那一族的家搬到
-        // `data\config\strata\strata_models.ini`（一个模型一段：16 格 = 界面参数、`ArgsN` = 手加参数，DEC-210）。
+        // `data\config\strata\strata_models.ini`（一个模型一段：17 格 = 界面参数、`ArgsN` = 手加参数，DEC-210）。
         // **次序是硬要求**：必须在下面任何一次 SaveConfig 之前 —— 写侧从此不再写 `[Model:*]` 段，
         // 先存一次就把老段抹了（= 迁移还没跑、数据先没了）。放在布局搬家之后：那时 RunConfigDir 才是最终位置。
         // 自检/探针里一律不跑（与布局搬家同一道按进程闸）：搬家类真路径不许被一次 --selftest 碰，

@@ -47,7 +47,7 @@ public partial class MainForm
         return s;
     }
 
-    /// <summary>DEC-122③：模型家底那 16 格的"磁盘基准"（冻结表 <see cref="_savedParams"/>）改从记录取。
+    /// <summary>DEC-122③：模型家底那 17 格的"磁盘基准"（冻结表 <see cref="_savedParams"/>）改从记录取。
     /// 这一族的家已经从 <c>[Current]</c> 搬到 <c>[Model:&lt;tag&gt;]</c>，基准不跟着改就会冒**假差异**：
     /// 记录里 Context=524288、而基准还是 <c>new Settings()</c> 的 131072 → 关窗那句「写进去 / 丢弃」
     /// 一开就是十几行他从没改过的"131072 → 524288"（他点名的防护①，这一族出过 BUG-034/049）。
@@ -230,7 +230,7 @@ public partial class MainForm
     }
 
     /// <summary>[Current] 里已退役、不再写出的键（DEC-079 取消融合层：llama 的每模型参数住 llama_models.ini 的段里；
-    /// DEC-122③ 起 Strata 那 16 个模型键的**重复副本**同理，家 = [Model:&lt;tag&gt;] 记录）。
+    /// DEC-122③ 起 Strata 那 17 个模型键的**重复副本**同理，家 = [Model:&lt;tag&gt;] 记录）。
     /// 读侧照旧认（一次性搬家要从旧值里取；③ 之后启动值与冻结基准也还从旧行里读），于是旧键随下一次保存自然消失（口径同 [Preset:] DEC-073）。
     /// 退役之后"磁盘上那一份"必须改从记录取，否则关窗明细会冒他没改过的假差异 —— 见 <see cref="SyncModelBaselineFromRecord"/>。
     /// 「用原始 ini 启动」那位不列在这里 —— 属性整个删了，读到就命中"没这个属性"被忽略（同 LowRam，DEC-075）。</summary>
@@ -252,7 +252,7 @@ public partial class MainForm
         nameof(Settings.NinferTemperature), nameof(Settings.NinferTopP),
         nameof(Settings.NinferTopK), nameof(Settings.NinferPresence), nameof(Settings.NinferEffort),
         nameof(Settings.NinferLmHead), nameof(Settings.NinferVision), nameof(Settings.NinferPreserve),
-        // DEC-122③：Strata 那 16 格模型家底的**重复副本**也退役 —— 它们每次提交保存时与当次选中模型的
+        // DEC-122③：Strata 那 17 格模型家底的**重复副本**也退役 —— 它们每次提交保存时与当次选中模型的
         // [Model:<tag>] 记录从同一份值写两处（ApiModel / Gpu / LayerSplit / Context / Kv / KvResident / Spec /
         // SpecMinP / ExpertCache / Prefill / Vision / VramReserveMib / ArenaPinGib / HeadLate / ExtraArgs /
         // ReasoningEffort）。值由记录承接，旧副本随下一次保存自然消失（口径同 [Preset:] DEC-073、LowRam DEC-075）。
@@ -261,7 +261,7 @@ public partial class MainForm
         nameof(Settings.ApiModel), nameof(Settings.Context), nameof(Settings.Kv), nameof(Settings.KvResident),
         nameof(Settings.Spec), nameof(Settings.SpecMinP), nameof(Settings.ExpertCache), nameof(Settings.Prefill),
         nameof(Settings.Vision), nameof(Settings.VramReserveMib), nameof(Settings.Gpu), nameof(Settings.LayerSplit),
-        nameof(Settings.ArenaPinGib), nameof(Settings.HeadLate), nameof(Settings.ExtraArgs),
+        nameof(Settings.ArenaPinGib), nameof(Settings.HeadLate), nameof(Settings.Parallel), nameof(Settings.ExtraArgs),
         nameof(Settings.ReasoningEffort),
     };
 
@@ -288,7 +288,7 @@ public partial class MainForm
             // 2026-10-23（审查 A 条）：模型参数那份文件**只在「提交」那一趟写**。
             //   commitParams=false 这一趟（关窗记窗口位置 / 设置页点保存 / 切模块开关 / 端口避让 / 更新链记跳过位）
             //   内存里的 `ModelSnaps` 一个字都不会变 —— 写盘没有意义，却正好把他**此刻手改的** `strata_models.ini`
-            //   盖回内存那份旧值（16 格回退、注释与 ArgsN 保住，事后看不出发生过什么）。
+            //   盖回内存那份旧值（17 格回退、注释与 ArgsN 保住，事后看不出发生过什么）。
             //   所以门槛提到这里，写盘只发生在真有话要说的时候；写之前先把文件里被别人改过的读进来。
             if (SaveWritesModelStore(commitParams))
             {
@@ -300,7 +300,7 @@ public partial class MainForm
                 // 模型家底快照只在**提交**时写（DEC-064 的口径：换模型只是看，没点保存不该把这套值记成"你要的"）
                 if (cur.Model.Length > 0) _config.ModelSnaps[cur.Model] = SnapshotModelFields(cur);
                 CommitSavedParams();
-                // A（2026-10-22，DEC-206 / DEC-210）：只改各段那 16 格对应的行（注释 / ArgsN / 自建键一行不动）。
+                // A（2026-10-22，DEC-206 / DEC-210）：只改各段那 17 格对应的行（注释 / ArgsN / 自建键一行不动）。
                 // **这一步失败就不动 ini** —— 老 `[Model:*]` 段此刻还在 ini 里（写侧已不再写它），
                 // 不写 ini = 那份退路原样留着（A1 ①②）。
                 // 成功这一趟**不写日志**：保存是日常动作，参数落哪儿在设置页/说明书里说一次就够（口径同 DEC-092 的 llama 侧）。

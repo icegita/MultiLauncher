@@ -165,6 +165,7 @@ public partial class MainForm
         new(nameof(Settings.VramReserveMib), "显存预留", ParamHome.Launcher, s => s.VramReserveMib, (s, v) => s.VramReserveMib = v),
         new(nameof(Settings.ArenaPinGib), "arena pin (GiB)", ParamHome.Launcher, s => s.ArenaPinGib, (s, v) => s.ArenaPinGib = v),
         new(nameof(Settings.HeadLate), "STRATA_HEAD_LATE", ParamHome.Launcher, s => Bool01(s.HeadLate), (s, v) => s.HeadLate = v == "1", Show: BoolWord),
+        new(nameof(Settings.Parallel), "并发数", ParamHome.Launcher, s => s.Parallel, (s, v) => s.Parallel = v),
         // —— 高级区：llama 一套（家底都在段里）——
         new(nameof(Settings.LlamaTemperature), "temperature", ParamHome.LlamaSection, s => s.LlamaTemperature, (s, v) => s.LlamaTemperature = v),
         new(nameof(Settings.LlamaTopP), "top-p", ParamHome.LlamaSection, s => s.LlamaTopP, (s, v) => s.LlamaTopP = v),
@@ -329,7 +330,7 @@ public partial class MainForm
         nameof(Settings.Spec), nameof(Settings.SpecMinP), nameof(Settings.ExpertCache), nameof(Settings.Prefill),
         nameof(Settings.Vision), nameof(Settings.VramReserveMib),
         nameof(Settings.Gpu), nameof(Settings.LayerSplit), nameof(Settings.ArenaPinGib), nameof(Settings.HeadLate),
-        nameof(Settings.ExtraArgs), nameof(Settings.ReasoningEffort),
+        nameof(Settings.Parallel), nameof(Settings.ExtraArgs), nameof(Settings.ReasoningEffort),
     };
 
     static readonly System.Reflection.PropertyInfo[] ModelOwnedProps =
@@ -365,7 +366,7 @@ public partial class MainForm
         return n;
     }
 
-    /// <summary>DEC-135（审查 A-1）：模型家底那 16 格的**打底**只有一个含义 = 「出厂默认」，
+    /// <summary>DEC-135（审查 A-1）：模型家底那 17 格的**打底**只有一个含义 = 「出厂默认」，
     /// 不是"上一件此刻在界面上/在冻结表里的那份"。谁都没写过这一件时（SETUP 新加的一件还没记录、
     /// 或模板里根本没有那枚旗标），带上上一件的格子就是**跨件串参数**：
     /// · `ExtraArgs` 会被原样拼进引擎命令行末尾（`BuildEffectiveConfig` 末尾那一句）；

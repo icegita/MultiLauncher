@@ -29,6 +29,7 @@ public class Settings
     public string VramReserveMib { get; set; } = "700";      // --vram-reserve-mib
     public string ArenaPinGib { get; set; } = "";            // STRATA_ARENA_PIN_GIB；留空 = 沿用配置里的值（不覆盖），填值才写入
     public bool HeadLate { get; set; } = false;              // STRATA_HEAD_LATE（回旧加载位置，仅 A/B 用）
+    public string Parallel { get; set; } = "1";              // Strata 的并发请求数（0.1.66 起）：配置的 parallel，服务端翻成引擎的 --batch N；1 = 一次一条，单卡不拆层最多 8；留空 = 不写
     public string ExtraArgs { get; set; } = "";              // 原样追加到 Strata 引擎参数末尾
     public string ReasoningEffort { get; set; } = "";        // 共享默认思考档（2026-10-04）：none / low / medium / high；留空 = 不写（聊天页里设的照旧）。写进运行配置同名的 <tag>.shared-settings.json
     public bool OpenBrowser { get; set; } = true;            // 就绪后自动打开网页

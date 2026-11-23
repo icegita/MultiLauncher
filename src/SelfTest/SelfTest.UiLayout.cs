@@ -81,9 +81,9 @@ internal static partial class SelfTest
                 // 全是读侧与外观收口、没有新功能 → 按 DEC-110 只升末位（0.1.8.6 → 0.1.8.7）。
                 // DEC-222（2026-10-25）：模型列表增删的缺口补齐（拉起服务那一刻按列表戳重扫，三模块同形）
                 // + 顺带修掉 DEC-103 / DEC-098③ 两条既有红 —— 同样是修复性批次 → 再升末位（0.1.8.7 → 0.1.8.8）。
-                // DEC-227（2026-11-12）：网关「转发失败」日志尾巴「。.」收成一个句号（纯文案）→ 再升末位（0.1.8.9 → 0.1.8.10）。
-                Check("版本号 = v0.1.8.10（csproj 0.1.8.10；网关日志文案收尾那批，按末位）",
-                    MainForm.VersionTag() == "v0.1.8.10", MainForm.VersionTag());
+                // DEC-228（2026-11-23）：Strata 高级区新增「并发数」（新功能）→ 再升末位（0.1.8.10 → 0.1.8.11）。
+                Check("版本号 = v0.1.8.11（csproj 0.1.8.11；Strata 并发数那批，按末位）",
+                    MainForm.VersionTag() == "v0.1.8.11", MainForm.VersionTag());
                 Check("版本显示不吃进提交号与空白（InformationalVersion 形如 0.1.8.3+<sha>，'+' 之后必须切干净）",
                     !MainForm.VersionTag().Contains('+') && !MainForm.VersionTag().Contains(' '), MainForm.VersionTag());
                 // DEC-180 的机器版护栏：csproj 里**只许有一个** `<Version>` 真标签。这个坑本仓库栽过两次 ——
@@ -192,34 +192,34 @@ internal static partial class SelfTest
                     gateSaved && uiForm.ValueInIniForTest("Context", snapSec) == ctxNew && !uiForm.SaveButtonEnabledForTest,
                     $"ok={gateSaved} 文件里={uiForm.ValueInIniForTest("Context", snapSec)} 按钮亮={uiForm.SaveButtonEnabledForTest}"
                     + " ｜最后几行：" + uiForm.LogHistoryTailForTest(4));
-                // ============ DEC-122③：那 16 个键只剩一个家（记录），[Current] 里的副本不再写出 ============
+                // ============ DEC-122③：那 17 个键只剩一个家（记录），[Current] 里的副本不再写出 ============
                 {
-                    var sixteen = new[]
+                    var owned = new[]
                     {
                         nameof(Settings.ApiModel), nameof(Settings.Context), nameof(Settings.Kv), nameof(Settings.KvResident),
                         nameof(Settings.Spec), nameof(Settings.SpecMinP), nameof(Settings.ExpertCache), nameof(Settings.Prefill),
                         nameof(Settings.Vision), nameof(Settings.VramReserveMib), nameof(Settings.Gpu), nameof(Settings.LayerSplit),
-                        nameof(Settings.ArenaPinGib), nameof(Settings.HeadLate), nameof(Settings.ExtraArgs),
+                        nameof(Settings.ArenaPinGib), nameof(Settings.HeadLate), nameof(Settings.Parallel), nameof(Settings.ExtraArgs),
                         nameof(Settings.ReasoningEffort),
                     };
                     var stillInCurrent = File.ReadLines(iniTmp)
                         .TakeWhile(l => !l.Trim().StartsWith("[" + snapSec + "]"))     // 只看 [Current] 那一层（到本段之前）
                         .Select(l => l.Trim().Split('=')[0].TrimEnd())                 // 「Key = Value」切出来的键带一个尾空格，得削掉
-                        .Intersect(sixteen).ToList();
-                    Check("DEC-122③ 点过一次「保存」之后，[Current] 里这 16 行一条都不再写出（重复副本退役）",
+                        .Intersect(owned).ToList();
+                    Check("DEC-122③ 点过一次「保存」之后，[Current] 里这 17 行一条都不再写出（重复副本退役）",
                         stillInCurrent.Count == 0, "还在 [Current] 里：" + string.Join("、", stillInCurrent));
                     // DEC-221（2026-10-25 他点「像这种空白值的参数，是不是不应该显示在配置文件里」）：
                     // 出厂默认就是空串的那 6 格，值为空时整行不写（读侧缺键 = 用默认，等价）。
-                    // 所以这条判据从「16 格全在」改成「默认非空的 10 格必须在 + 默认空的 6 格要么不在、要么值非空」。
-                    var mustHave = sixteen.Where(k => !MainForm.EmptyByDefaultKeys.Contains(k)).ToList();
-                    var mayBeMissing = sixteen.Where(k => MainForm.EmptyByDefaultKeys.Contains(k)).ToList();
+                    // 所以这条判据从「17 格全在」改成「默认非空的 11 格必须在 + 默认空的 6 格要么不在、要么值非空」。
+                    var mustHave = owned.Where(k => !MainForm.EmptyByDefaultKeys.Contains(k)).ToList();
+                    var mayBeMissing = owned.Where(k => MainForm.EmptyByDefaultKeys.Contains(k)).ToList();
                     var missingInRecord = mustHave.Where(k => uiForm.ValueInIniForTest(k, snapSec) == "<没有这一行>").ToList();
                     var blankInRecord = mayBeMissing
                         .Where(k => uiForm.ValueInIniForTest(k, snapSec) is { } v && v != "<没有这一行>" && v.Length == 0).ToList();
-                    Check("DEC-122③ + DEC-221 记录那一段：默认非空的 10 格照旧全装上，默认空的 6 格（ApiModel/Gpu/LayerSplit/ArenaPinGib/ExtraArgs/ReasoningEffort）值为空就不写行（Model= 选中指针不在名单里）",
-                        mustHave.Count == 10 && mayBeMissing.Count == 6
+                    Check("DEC-122③ + DEC-221 记录那一段：默认非空的 11 格照旧全装上，默认空的 6 格（ApiModel/Gpu/LayerSplit/ArenaPinGib/ExtraArgs/ReasoningEffort）值为空就不写行（Model= 选中指针不在名单里）",
+                        mustHave.Count == 11 && mayBeMissing.Count == 6
                         && missingInRecord.Count == 0 && blankInRecord.Count == 0
-                        && MainForm.ModelOwnedKeys.SequenceEqual(sixteen)
+                        && MainForm.ModelOwnedKeys.SequenceEqual(owned)
                         && MainForm.RetiredCurrentKeys.Contains(nameof(Settings.Context))
                         && !MainForm.RetiredCurrentKeys.Contains(nameof(Settings.Model)),
                         "段里缺的：" + string.Join("、", missingInRecord) + " ｜空值行还在：" + string.Join("、", blankInRecord));
@@ -408,8 +408,8 @@ internal static partial class SelfTest
                 // dump 尾部会把高级区（在 _advHost 里）的条目并进来，所以顺序断言只看「文本框+文本框+」堆叠之前的那段。
                 {
                     var head = Row("card2").Split("文本框+文本框+")[0];
-                    Check("卡片2 视觉顺序 = 模型名称｜上下文｜打开网页｜◂ 高级｜KV 精度｜附加参数（DEC-076 候选两行）",
-                        InOrder(head, "模型名称", "上下文", "打开网页", "◂ 高级", "KV 精度", "附加参数")
+                    Check("卡片2 视觉顺序 = 模型名称｜上下文｜打开网页｜KV 精度｜附加参数｜◂ 高级（DEC-076 候选两行；高级与第二行同带）",
+                        InOrder(head, "模型名称", "上下文", "打开网页", "KV 精度", "附加参数", "◂ 高级")
                         && !Row("adv-strata").Contains("附加参数") && !Row("adv-strata").Contains("思考深度"), head);
                 }
                 Check("Strata 页：卡1 端口格 = 公开端口、思考深度 = Strata 下拉（llama 那两只挪出画外）",

@@ -359,8 +359,8 @@ internal static partial class SelfTest
                     oldDup.Context == "131072" && oldDup.KvResident && oldDup.HeadLate
                     && oldDup.ExtraArgs == "--old" && oldDup.ReasoningEffort == "high" && oldDup.Port == "9099",
                     $"ctx={oldDup.Context} kvres={oldDup.KvResident} extra={oldDup.ExtraArgs}");
-                Check("DEC-122③ 退役名单里的模型家底 = 16 格、与 ModelOwnedKeys 一格不差（Model= 选中指针不许进去）",
-                    MainForm.ModelOwnedKeys.Length == 16
+                Check("DEC-122③ 退役名单里的模型家底 = 17 格、与 ModelOwnedKeys 一格不差（Model= 选中指针不许进去）",
+                    MainForm.ModelOwnedKeys.Length == 17
                     && MainForm.ModelOwnedKeys.All(k => MainForm.RetiredCurrentKeys.Contains(k))
                     && !MainForm.RetiredCurrentKeys.Contains(nameof(Settings.Model))
                     && !MainForm.RetiredCurrentKeys.Contains(nameof(Settings.Port))

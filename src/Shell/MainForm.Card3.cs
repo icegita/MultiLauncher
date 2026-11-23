@@ -118,6 +118,7 @@ public partial class MainForm
         {
             _txtHost, _txtPort, _txtPortLlama, _txtModelName, _txtContext, _txtExtra,
             _txtGpu, _txtLayerSplit, _txtSpec, _txtSpecMinP, _txtExpertCache, _txtPrefill, _txtVramReserve, _txtArenaPin,
+            _txtParallel,
             _txtTemperature, _txtTopP, _txtTopK, _txtMinP, _txtPresencePenalty, _txtRepeatPenalty, _txtSpecDraftNMax,
         })
         {

@@ -846,7 +846,7 @@ public partial class MainForm
 
     // —— 「打开配置」= 打开**这一击真正落盘的那一份**（DEC-077 定的口径，DEC-079 把 llama 那一支改成"就是家底本身"，
     //    DEC-122② 把 Strata 这一支改成开壳 ini；**2026-10-22 再改两次（DEC-206 → DEC-211）**）——
-    //   Strata = **`data\config\strata\strata_models.ini` 这一份文件**：一个模型一段，段里就是界面那 16 格 +
+    //   Strata = **`data\config\strata\strata_models.ini` 这一份文件**：一个模型一段，段里就是界面那 17 格 +
     //            他手加的 `Args1..ArgsN`（引擎实读的产物在旁边的 `run\` 子目录，不给入口 —— 那两份每次启动重建）。
     //            壳自己的 `MultiLauncher.ini` 从这里退出：它搬到设置页「通用 → 路径」那一行（他点名）。
     //   llama  = data\config\llama\llama_models.ini（取消融合层之后界面改的就是它、引擎读的也是它）

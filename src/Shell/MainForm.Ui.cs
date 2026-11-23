@@ -290,7 +290,7 @@ public partial class MainForm
         _btnOpenConfig.Click += (_, _) => OpenActiveConfig();
         _btnSettings.Click += (_, _) => OpenSettings();
         Tip.Set(_btnOpenConfig, "打开当前页这一份配置：Strata = " + DisplayDataPath(RealRunConfigDir()) + "\\" + ModelParamsFileName +
-                                 "（一个模型一段：界面那 16 格 + 你自己加的 ArgsN 都在这份里；引擎实读的产物在旁边的 run\\ 子目录，不用管）；" +
+                                 "（一个模型一段：界面那 17 格 + 你自己加的 ArgsN 都在这份里；引擎实读的产物在旁边的 run\\ 子目录，不用管）；" +
                                  "llama / Ninfer = 它们各自的家底 ini（界面改的就是它、引擎读的也是它）。" +
                                  "壳自己的 MultiLauncher.ini 在设置页「通用 → 路径」那一行");
         Tip.Set(_btnSettings, "打开设置（通用 / 每个启用模块各一节 / 关于）");

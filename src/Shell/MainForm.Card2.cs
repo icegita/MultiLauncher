@@ -137,7 +137,7 @@ public partial class MainForm
             // 只把按钮藏起来，「高级」仍在下面那一格（不占位的话 Ninfer 页两枚按钮整体上浮、与另两页对不齐）。
             if (ActiveView.WebButtonShown) { _btnOpenWeb.Visible = true; _btnOpenWeb.SetBounds(CardPad + content - sideW, CardPad, sideW, RowH); }
             else { _btnOpenWeb.Visible = false; _btnOpenWeb.SetBounds(-2000, -2000, sideW, RowH); }
-            _btnAdv.SetBounds(CardPad + content - sideW, CardPad + RowH + UiTheme.S(this, 8), sideW, RowH);
+            _btnAdv.SetBounds(CardPad + content - sideW, CardPad + RowH + RowGap, sideW, RowH);
 
             int rowsBottom = CardPad + RowH * 2 + RowGap;
             int advH = _advShown ? AdvHeight() : 0;

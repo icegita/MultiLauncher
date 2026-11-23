@@ -269,7 +269,7 @@ public partial class MainForm
 
     // 「打开配置」开的是哪一份（第 0 轮 DEC-094 起两支实现在 MainForm.ModuleViews.cs 的 *ConfigTarget）：
     //   Strata = **`data\config\strata\strata_models.ini`**（2026-10-22 他点名的第三版，DEC-211：直接开文件，
-    //             与 llama / Ninfer 同一形状；模型参数那 16 格与他手加的 `ArgsN` 都在这份里，
+    //             与 llama / Ninfer 同一形状；模型参数那 17 格与他手加的 `ArgsN` 都在这份里，
     //             引擎实读的产物与伴生文件在旁边的 `run\` 子目录，不给入口）
     //             壳自己的 MultiLauncher.ini 搬到设置页「通用 → 路径」，主界面这一枚不再开它）
     //   llama / Ninfer = 它们各自的家底 ini（界面「保存」写的就是它、引擎读的也是它）

@@ -122,7 +122,7 @@ internal static partial class SelfTest
                     InOrder(Row("card3"), "模型", "加载", "清屏"), Row("card3"));
                 Check("高级区(Strata) = 指定显卡入、KV 精度出（顺序正确；DEC-076 候选：思考深度回卡1）",
                     InOrder(Row("adv-strata"), "指定显卡", "投机解码", "最低接受率", "显存预留", "expert-cache", "prefill",
-                        "视觉", "层拆分起点", "arena pin", "KV 驻留内存", "STRATA_HEAD_LATE")
+                        "视觉", "层拆分起点", "arena pin", "并发数", "KV 驻留内存", "STRATA_HEAD_LATE")
                     && !Row("adv-strata").Contains("KV 精度") && !Row("adv-strata").Contains("附加参数")
                     && !Row("adv-strata").Contains("思考深度") && !Row("adv-strata").Contains("低内存"), Row("adv-strata"));
                 Check("高级区(llama.cpp) 项顺序正确（2026-10-04；DEC-145：投机方式/视觉两枚接在 spec-draft-n-max 之后）",

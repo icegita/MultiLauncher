@@ -173,7 +173,7 @@ public partial class MainForm
     }
 
     /// <summary>段里那些"写了但没有任何消费者"的键点名（DEC-219 §5 第 5 条）。
-    /// 目前认四种：16 格（界面键）、`ArgsN`、花括号块、注释。别的一律告警 —— 因为写回纪律①保证
+    /// 目前认四种：17 格（界面键）、`ArgsN`、花括号块、注释。别的一律告警 —— 因为写回纪律①保证
     /// "不认识的键一行不动"，所以它**不会报错、也不会生效**，只会静默留存在文件里（正是要防的那一类）。</summary>
     static void WarnUnknownModelKeys(ModelParamsIni.Section sec, List<string> warnings)
     {
@@ -185,8 +185,8 @@ public partial class MainForm
             if (k.Length > ModelParamsIni.ArgsKeyPrefix.Length
                 && k.StartsWith(ModelParamsIni.ArgsKeyPrefix, StringComparison.OrdinalIgnoreCase)
                 && int.TryParse(k[ModelParamsIni.ArgsKeyPrefix.Length..], out _)) continue;   // ArgsN
-            if (ModelOwnedKeys.Contains(k, StringComparer.OrdinalIgnoreCase)) continue;       // 16 格
-            warnings.Add($"[{sec.Name}] 这一行写着「{k} = ...」，但它既不是界面上那 16 格、也不是 "
+            if (ModelOwnedKeys.Contains(k, StringComparer.OrdinalIgnoreCase)) continue;       // 17 格
+            warnings.Add($"[{sec.Name}] 这一行写着「{k} = ...」，但它既不是界面上那 17 格、也不是 "
                        + $"{ModelParamsIni.ArgsKeyPrefix}N、也不是花括号块 —— 壳不认这个键，它不会生效也不会报错（写回时会原样留着）");
         }
     }

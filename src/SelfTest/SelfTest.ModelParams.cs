@@ -613,8 +613,8 @@ internal static partial class SelfTest
 
                 var writtenOwned = blankSec!.Body.Count(l => ModelParamsIni.KeyOf(l) is { } k2 && MainForm.ModelOwnedKeys.Contains(k2)
                     && (ModelParamsIni.ValueOf(l) ?? "").Length > 0);
-                Check("A 判据15c 默认非空的 10 格照旧照写（缺了行就静默回落默认，等于把校验拦截也丢了）",
-                    writtenOwned == 10,
+                Check("A 判据15c 默认非空的 11 格照旧照写（缺了行就静默回落默认，等于把校验拦截也丢了）",
+                    writtenOwned == 11,
                     "写出来的家底格数 = " + writtenOwned + " ｜" + string.Join(" / ", blankSec!.Body));
 
                 Check("A 判据15d 写回纪律①照旧：注释与 ArgsN 一行不动（只删自己那几格的空值行）",

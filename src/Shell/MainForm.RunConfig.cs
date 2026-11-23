@@ -90,6 +90,12 @@ public partial class MainForm
 
         node["port"] = port;
         if (s.Host.Trim().Length > 0) node["host"] = s.Host.Trim(); else node.Remove("host");
+        // 并发数（0.1.66）：写配置顶层的 parallel（官方 CLI 的 --parallel 同义），服务端再翻成引擎的 --batch N；
+        // 直接写 args 会绕过服务端按显存/层拆分的收敛与日志说明。留空 = 不写这一键（= 一次一条）。
+        var parallel = s.Parallel.Trim();
+        if (parallel.Length == 0) node.Remove("parallel");
+        else if (int.TryParse(parallel, out var par) && par >= 1) node["parallel"] = par;
+        else { error = "并发数必须是 >= 1 的整数；留空 = 不写（引擎按一次一条）。"; return false; }
         // 界面已去掉 API 密钥字段：填了才写，留空则保留 config 里原有的（不主动删）
         if (s.ApiKey.Trim().Length > 0) node["api_key"] = s.ApiKey;
         // 服务对外宣告的模型名：客户端 API 里的 model 字段就是它（留空 = 保留 config 原本的）
